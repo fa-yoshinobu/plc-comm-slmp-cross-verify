@@ -1,0 +1,32 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "clients", "clients", "{9123F88B-E531-3118-42D7-ED8CEF4BD00E}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "dotnet", "dotnet", "{85F27C6A-2B5B-DBF6-E11C-F59BFA06573F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SlmpVerifyClient", "clients\dotnet\SlmpVerifyClient\SlmpVerifyClient.csproj", "{17007E62-562C-762D-8AA2-1150CD6733C6}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{17007E62-562C-762D-8AA2-1150CD6733C6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{17007E62-562C-762D-8AA2-1150CD6733C6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{17007E62-562C-762D-8AA2-1150CD6733C6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{17007E62-562C-762D-8AA2-1150CD6733C6}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{85F27C6A-2B5B-DBF6-E11C-F59BFA06573F} = {9123F88B-E531-3118-42D7-ED8CEF4BD00E}
+		{17007E62-562C-762D-8AA2-1150CD6733C6} = {85F27C6A-2B5B-DBF6-E11C-F59BFA06573F}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {797EC878-865F-436C-AAC3-54FAA6FF0620}
+	EndGlobalSection
+EndGlobal

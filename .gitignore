@@ -1,0 +1,24 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+
+# .NET
+bin/
+obj/
+*.user
+*.userosscache
+*.sln.doccache
+
+# C++
+*.exe
+*.o
+*.obj
+
+# Logs & Temp
+logs/*.json
+!logs/latest.json
+server_output.tmp
+packet_log.json
