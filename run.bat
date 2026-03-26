@@ -5,6 +5,7 @@ set DOTNET_PROJECT=%ROOT%clients\dotnet\SlmpVerifyClient\SlmpVerifyClient.csproj
 set CPP_INCLUDE_DIR=%ROOT%..\plc-comm-slmp-cpp-minimal\src
 set CPP_SOURCE=%ROOT%clients\cpp\main.cpp
 set CPP_LIB_SOURCE=%CPP_INCLUDE_DIR%\slmp_minimal.cpp
+set CPP_HIGH_LEVEL_SOURCE=%CPP_INCLUDE_DIR%\slmp_high_level.cpp
 set CPP_EXE=%ROOT%clients\cpp\cpp_verify_client.exe
 
 :MENU
@@ -73,7 +74,7 @@ if errorlevel 1 (
     echo g++ not found in PATH.
     exit /b 1
 )
-g++ -I "%CPP_INCLUDE_DIR%" "%CPP_SOURCE%" "%CPP_LIB_SOURCE%" -o "%CPP_EXE%" -lws2_32
+g++ -I "%CPP_INCLUDE_DIR%" "%CPP_SOURCE%" "%CPP_LIB_SOURCE%" "%CPP_HIGH_LEVEL_SOURCE%" -o "%CPP_EXE%" -lws2_32
 if errorlevel 1 exit /b %errorlevel%
 if not exist "%CPP_EXE%" (
     echo C++ executable was not created: %CPP_EXE%

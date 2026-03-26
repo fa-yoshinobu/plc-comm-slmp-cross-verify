@@ -5,7 +5,7 @@ Python, .NET, and C++ SLMP libraries.
 
 ## Scope
 
-The current suite in `verify.py` contains 140 tests. It covers:
+The current suite in `verify.py` contains 143 tests. It covers:
 
 - binary 3E and 4E frames
 - Q/L and iQ-R word and bit access
@@ -16,6 +16,7 @@ The current suite in `verify.py` contains 140 tests. It covers:
 - block access
 - remote control operations
 - self-test and type-name reads
+- high-level named snapshot read/write/poll helpers
 - memory read/write and extension-unit read/write
 - Extended Specification qualified devices such as `Jx\SWy`, `Ux\G`, and `Ux\HG`
 - negative tests for oversized reads
@@ -41,7 +42,7 @@ The current suite in `verify.py` contains 140 tests. It covers:
 - .NET:
   `dotnet build clients/dotnet/SlmpVerifyClient/SlmpVerifyClient.csproj -c Debug`
 - C++:
-  `g++ -I ../plc-comm-slmp-cpp-minimal/src clients/cpp/main.cpp ../plc-comm-slmp-cpp-minimal/src/slmp_minimal.cpp -o clients/cpp/cpp_verify_client.exe -lws2_32`
+  `g++ -I ../plc-comm-slmp-cpp-minimal/src clients/cpp/main.cpp ../plc-comm-slmp-cpp-minimal/src/slmp_minimal.cpp ../plc-comm-slmp-cpp-minimal/src/slmp_high_level.cpp -o clients/cpp/cpp_verify_client.exe -lws2_32`
 
 `run.bat` option `1` and option `3` build both wrappers. If the C++ executable is
 missing, `verify.py` now reports `missing executable: ...` instead of a raw

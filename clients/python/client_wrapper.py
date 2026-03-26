@@ -1,4 +1,4 @@
-﻿import json
+import json
 import sys
 import os
 import argparse
@@ -7,7 +7,9 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.
 
 from slmp.client import SlmpClient
 from slmp.constants import PLCSeries, FrameType
-from slmp.core import SlmpTarget, ExtensionSpec
+from slmp.core import SlmpTarget, ExtensionSpec, parse_device
+from slmp.constants import DEVICE_CODES, DeviceUnit
+from slmp.utils import read_named_sync, write_named_sync, poll_sync
 
 def _parse_kv_pairs(items_str):
     """Parse 'DEV=VAL,DEV2=VAL2' into list of (device_str, int_value)."""
@@ -33,12 +35,43 @@ def _parse_dev_values_pairs(blocks_str):
         result.append((k.strip(), [int(x) for x in v.split(":")]))
     return result
 
+
+def _parse_named_addresses(items_str):
+    return [item.strip() for item in items_str.split(",") if item.strip()]
+
+
+def _is_bit_address(address):
+    if "." in address:
+        return True
+    base = address.split(":", 1)[0].strip()
+    ref = parse_device(base)
+    code = DEVICE_CODES.get(ref.code)
+    return code is not None and code.unit == DeviceUnit.BIT
+
+
+def _parse_named_value(address, raw_value):
+    if "." in address or _is_bit_address(address):
+        return bool(int(raw_value, 0))
+    if ":" in address and address.rsplit(":", 1)[1].strip().upper() == "F":
+        return float(raw_value)
+    return int(raw_value, 0)
+
+
+def _parse_named_updates(items_str):
+    result = {}
+    for item in _parse_named_addresses(items_str):
+        key, value = item.split("=", 1)
+        address = key.strip()
+        result[address] = _parse_named_value(address, value.strip())
+    return result
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("host")
     parser.add_argument("port", type=int)
     parser.add_argument("command", choices=[
         "read", "write", "read-type",
+        "read-named", "write-named", "poll-once",
         "remote-run", "remote-stop", "remote-pause", "remote-latch-clear", "remote-reset",
         "random-read", "random-write-words", "random-write-bits",
         "block-read", "block-write",
@@ -106,6 +139,29 @@ def main():
             elif cmd == "read-type":
                 info = client.read_type_name()
                 result = {"status": "success", "model": info.model, "model_code": hex(info.model_code) if info.model_code is not None else None}
+
+            elif cmd == "read-named":
+                addresses = _parse_named_addresses(args.address)
+                values = read_named_sync(client, addresses)
+                result = {
+                    "status": "success",
+                    "addresses": list(values.keys()),
+                    "values": list(values.values()),
+                }
+
+            elif cmd == "write-named":
+                updates = _parse_named_updates(args.address)
+                write_named_sync(client, updates)
+                result = {"status": "success"}
+
+            elif cmd == "poll-once":
+                addresses = _parse_named_addresses(args.address)
+                values = next(poll_sync(client, addresses, 0.0))
+                result = {
+                    "status": "success",
+                    "addresses": list(values.keys()),
+                    "values": list(values.values()),
+                }
 
             # --- Remote operations ---
             elif cmd == "remote-run":

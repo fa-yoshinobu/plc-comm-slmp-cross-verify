@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -75,6 +75,37 @@ namespace SlmpVerifyClient
                 {
                     var info = await client.ReadTypeNameAsync();
                     result = new { status = "success", model = info.Model, model_code = "0x" + info.ModelCode.ToString("X4") };
+                }
+                else if (command == "read-named")
+                {
+                    var addresses = ParseNamedAddresses(address);
+                    var values = await client.ReadNamedAsync(addresses);
+                    result = new
+                    {
+                        status = "success",
+                        addresses,
+                        values = addresses.Select(key => values[key]).ToArray(),
+                    };
+                }
+                else if (command == "write-named")
+                {
+                    var updates = ParseNamedUpdates(address);
+                    await client.WriteNamedAsync(updates);
+                    result = new { status = "success" };
+                }
+                else if (command == "poll-once")
+                {
+                    var addresses = ParseNamedAddresses(address);
+                    await foreach (var snapshot in client.PollAsync(addresses, TimeSpan.Zero))
+                    {
+                        result = new
+                        {
+                            status = "success",
+                            addresses,
+                            values = addresses.Select(key => snapshot[key]).ToArray(),
+                        };
+                        break;
+                    }
                 }
 
                 // --- Remote operations ---
@@ -234,6 +265,66 @@ namespace SlmpVerifyClient
                 return new KeyValuePair<string, List<int>>(parts[0].Trim(), vals);
             }).ToList();
         }
+
+        static string[] ParseNamedAddresses(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return [];
+            return s.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        }
+
+        static Dictionary<string, object> ParseNamedUpdates(string s)
+        {
+            var updates = new Dictionary<string, object>(StringComparer.Ordinal);
+            foreach (string item in ParseNamedAddresses(s))
+            {
+                var parts = item.Split('=', 2);
+                string key = parts[0].Trim();
+                string value = parts[1].Trim();
+                updates[key] = ParseNamedScalar(key, value);
+            }
+            return updates;
+        }
+
+        static object ParseNamedScalar(string address, string value)
+        {
+            if (address.Contains('.'))
+                return value == "1" || value.Equals("true", StringComparison.OrdinalIgnoreCase);
+
+            string baseAddress = address.Split(':', 2)[0].Trim();
+            var device = SlmpDeviceParser.Parse(baseAddress);
+            if (IsBitDevice(device.Code))
+                return value == "1" || value.Equals("true", StringComparison.OrdinalIgnoreCase);
+
+            if (address.Contains(':') && address[(address.LastIndexOf(':') + 1)..].Equals("F", StringComparison.OrdinalIgnoreCase))
+                return double.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
+
+            return int.Parse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        static bool IsBitDevice(SlmpDeviceCode code)
+            => code is SlmpDeviceCode.SM
+                or SlmpDeviceCode.X
+                or SlmpDeviceCode.Y
+                or SlmpDeviceCode.M
+                or SlmpDeviceCode.L
+                or SlmpDeviceCode.F
+                or SlmpDeviceCode.V
+                or SlmpDeviceCode.B
+                or SlmpDeviceCode.TS
+                or SlmpDeviceCode.TC
+                or SlmpDeviceCode.LTS
+                or SlmpDeviceCode.LTC
+                or SlmpDeviceCode.STS
+                or SlmpDeviceCode.STC
+                or SlmpDeviceCode.LSTS
+                or SlmpDeviceCode.LSTC
+                or SlmpDeviceCode.CS
+                or SlmpDeviceCode.CC
+                or SlmpDeviceCode.LCS
+                or SlmpDeviceCode.LCC
+                or SlmpDeviceCode.SB
+                or SlmpDeviceCode.DX
+                or SlmpDeviceCode.DY;
     }
 }
 

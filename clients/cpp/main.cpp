@@ -22,6 +22,7 @@
 #endif
 
 #include "slmp_minimal.h"
+#include "slmp_high_level.h"
 
 // --- Socket Transport ---
 #ifdef _WIN32
@@ -153,6 +154,110 @@ static std::vector<std::pair<std::string,std::vector<int>>> parseDevValuesPairs(
         out.push_back({dev, vals});
     }
     return out;
+}
+
+static std::vector<std::string> parseNamedAddresses(const std::string& s) {
+    std::vector<std::string> out;
+    for (auto& item : splitStr(s, ',')) {
+        if (!item.empty()) out.push_back(item);
+    }
+    return out;
+}
+
+static bool parseBoolValue(const std::string& s) {
+    return s == "1" || s == "true" || s == "TRUE" || s == "True";
+}
+
+static slmp::Error parseNamedUpdates(const std::string& s, slmp::highlevel::Snapshot& out) {
+    out.clear();
+    for (auto& item : splitStr(s, ',')) {
+        auto eq = item.find('=');
+        if (eq == std::string::npos) return slmp::Error::InvalidArgument;
+        std::string address = item.substr(0, eq);
+        std::string raw = item.substr(eq + 1);
+        slmp::highlevel::AddressSpec spec;
+        const slmp::Error err = slmp::highlevel::parseAddressSpec(address.c_str(), spec);
+        if (err != slmp::Error::Ok) return err;
+
+        slmp::highlevel::NamedValue nv;
+        nv.address = address;
+        switch (spec.type) {
+            case slmp::highlevel::ValueType::Bit:
+                nv.value = slmp::highlevel::Value::bitValue(parseBoolValue(raw));
+                break;
+            case slmp::highlevel::ValueType::S16:
+                nv.value = slmp::highlevel::Value::s16Value((int16_t)std::stoi(raw));
+                break;
+            case slmp::highlevel::ValueType::U16:
+                nv.value = slmp::highlevel::Value::u16Value((uint16_t)parseAutoInt(raw));
+                break;
+            case slmp::highlevel::ValueType::S32:
+                nv.value = slmp::highlevel::Value::s32Value((int32_t)std::stol(raw));
+                break;
+            case slmp::highlevel::ValueType::U32:
+                nv.value = slmp::highlevel::Value::u32Value((uint32_t)std::stoul(raw, nullptr, 0));
+                break;
+            case slmp::highlevel::ValueType::Float32:
+                nv.value = slmp::highlevel::Value::float32Value(std::stof(raw));
+                break;
+            default:
+                return slmp::Error::InvalidArgument;
+        }
+        out.push_back(nv);
+    }
+    return slmp::Error::Ok;
+}
+
+static void printJsonString(const std::string& s) {
+    std::cout << '"';
+    for (char c : s) {
+        switch (c) {
+            case '\\': std::cout << "\\\\"; break;
+            case '"': std::cout << "\\\""; break;
+            case '\n': std::cout << "\\n"; break;
+            case '\r': std::cout << "\\r"; break;
+            case '\t': std::cout << "\\t"; break;
+            default: std::cout << c; break;
+        }
+    }
+    std::cout << '"';
+}
+
+static void printHighLevelValue(const slmp::highlevel::Value& value) {
+    switch (value.type) {
+        case slmp::highlevel::ValueType::Bit:
+            std::cout << (value.bit ? "true" : "false");
+            break;
+        case slmp::highlevel::ValueType::S16:
+            std::cout << value.s16;
+            break;
+        case slmp::highlevel::ValueType::U16:
+            std::cout << value.u16;
+            break;
+        case slmp::highlevel::ValueType::S32:
+            std::cout << value.s32;
+            break;
+        case slmp::highlevel::ValueType::U32:
+            std::cout << value.u32;
+            break;
+        case slmp::highlevel::ValueType::Float32:
+            std::cout << std::fixed << std::setprecision(6) << value.f32;
+            break;
+    }
+}
+
+static void printSnapshotResult(const slmp::highlevel::Snapshot& snapshot) {
+    std::cout << "{\"status\":\"success\",\"addresses\":[";
+    for (size_t i = 0; i < snapshot.size(); ++i) {
+        printJsonString(snapshot[i].address);
+        std::cout << (i + 1 == snapshot.size() ? "" : ",");
+    }
+    std::cout << "],\"values\":[";
+    for (size_t i = 0; i < snapshot.size(); ++i) {
+        printHighLevelValue(snapshot[i].value);
+        std::cout << (i + 1 == snapshot.size() ? "" : ",");
+    }
+    std::cout << "]}" << std::endl;
 }
 
 static slmp::DeviceAddress parseDevice(const std::string& addr) {
@@ -302,6 +407,28 @@ int main(int argc, char** argv) {
                 std::cout << "{\"status\":\"success\",\"model\":\"" << info.model << "\",\"model_code\":\"0x"
                           << std::hex << std::setw(4) << std::setfill('0') << info.model_code << std::dec << "\"}" << std::endl;
             else jsonErr(std::to_string((int)client.lastError()));
+        }
+        else if (cmd == "read-named") {
+            slmp::highlevel::Snapshot snapshot;
+            const auto addresses = parseNamedAddresses(ads);
+            const slmp::Error err = slmp::highlevel::readNamed(client, addresses, snapshot);
+            if (err == slmp::Error::Ok) printSnapshotResult(snapshot);
+            else jsonErr(std::to_string((int)err));
+        }
+        else if (cmd == "write-named") {
+            slmp::highlevel::Snapshot updates;
+            slmp::Error err = parseNamedUpdates(ads, updates);
+            if (err == slmp::Error::Ok) err = slmp::highlevel::writeNamed(client, updates);
+            if (err == slmp::Error::Ok) jsonOk();
+            else jsonErr(std::to_string((int)err));
+        }
+        else if (cmd == "poll-once") {
+            slmp::highlevel::Poller poller;
+            slmp::highlevel::Snapshot snapshot;
+            slmp::Error err = poller.compile(parseNamedAddresses(ads));
+            if (err == slmp::Error::Ok) err = poller.readOnce(client, snapshot);
+            if (err == slmp::Error::Ok) printSnapshotResult(snapshot);
+            else jsonErr(std::to_string((int)err));
         }
         else if (cmd == "remote-run") {
             if (client.remoteRun() == slmp::Error::Ok) jsonOk(); else jsonErr(std::to_string((int)client.lastError()));

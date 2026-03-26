@@ -11,7 +11,7 @@ harness.
 - request-packet mismatches for equivalent public operations
 - regressions in wrapper behavior after library changes
 
-The current suite in `verify.py` contains 140 tests.
+The current suite in `verify.py` contains 143 tests.
 
 ## Covered Areas
 
@@ -19,6 +19,7 @@ The current suite in `verify.py` contains 140 tests.
 - basic word and bit devices
 - timers, counters, long timers/counters, and index registers
 - dword and float helpers
+- high-level named snapshot read/write/poll helpers
 - routing / other-station access
 - random access
 - block access

@@ -1,6 +1,6 @@
-﻿"""Comprehensive SLMP cross-language verification tool.
+"""Comprehensive SLMP cross-language verification tool.
 
-Runs 140 tests covering the public SLMP surface exercised by the Python,
+Runs 143 tests covering the public SLMP surface exercised by the Python,
 .NET, and C++ wrappers.
 Checks:
   1. Status parity (all clients succeed/fail on the same test)
@@ -200,6 +200,14 @@ TESTS = [
     _t("3E Read Type Name", "read-type", "", []),
     _t("4E Read Type Name", "read-type", "", [], {"frame": "4e"}),
 
+    # ===== High-Level Named Snapshot =====
+    _t("3E QL Named Write D910",
+       "write-named", "D910=321", []),
+    _t("3E QL Named Read  D910 / D920:F / D930.3",
+       "read-named", "D910,D920:F,D930.3", []),
+    _t("3E QL Poll Once   D910 / D920:F / D930.3",
+       "poll-once", "D910,D920:F,D930.3", []),
+
     # ===== Memory Read/Write =====
     _t("Memory Write 0x100 [100,200,300]",    "memory-write", "0x100", [100, 200, 300]),
     _t("Memory Read  0x100 3pts",             "memory-read",  "0x100", [3]),
@@ -303,6 +311,12 @@ def generate_desc(cmd, addr, extra, flags, clients, expect_error=False):
         return f"Self-test: '{addr}' echo back check  [{ctx}]"
     elif cmd == "read-type":
         return f"Read model name (model name + code)  [{ctx}]"
+    elif cmd == "write-named":
+        return f"Write named snapshot {addr}  [{ctx}]"
+    elif cmd == "read-named":
+        return f"Read named snapshot {addr}  [{ctx}]"
+    elif cmd == "poll-once":
+        return f"Poll one named snapshot {addr}  [{ctx}]"
     elif cmd == "memory-write":
         return f"Memory {addr} <- {list(extra)}  [{ctx}]"
     elif cmd == "memory-read":
@@ -402,7 +416,7 @@ def log_print(msg, fp=None):
 # Main test runner
 # ---------------------------------------------------------------------------
 def test_case(name, command, address, extra, flags, clients, expect_error, packets_json, log_fp, prev_result=None):
-    prev_tag = f"  [蜑榊屓:{prev_result}]" if prev_result else ""
+    prev_tag = f"  [Prev:{prev_result}]" if prev_result else ""
     log_print(f"Running: {name}{prev_tag}", log_fp)
     desc = generate_desc(command, address, extra, flags, clients, expect_error)
     log_print(f"  {desc}", log_fp)
