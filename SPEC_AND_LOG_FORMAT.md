@@ -1,38 +1,91 @@
-# SLMP Verification Detailed Specifications and Log Format
+# SLMP Verification Specs and Log Files
 
-## Mock Server Specifications (`server/mock_server.py`)
+## Mock Server Scope
 
-### Supported Subcommands
-- `0000 / 0001`: Q/L Word / Bit
-- `0002 / 0003`: iQ-R Word / Bit
-- `0080 / 0081`: Extended Device Q/L Word / Bit (Extended Address)
-- `0082 / 0083`: Extended Device iQ-R Word / Bit (Extended Address)
+`server/mock_server.py` is the protocol fixture used by `verify.py`.
 
-### Simulated Error Scenarios (NG Patterns)
-SLMP errors are intentionally returned under the following conditions:
-- **Address out of range (`0xC050`)**: When `999999` is specified as the starting address.
-- **Data length too large (`0xC056`)**: When `1001` or more points are specified for reading.
-- **Invalid device code (`0xC051`)**: When an invalid device code (internally `0xEE`, etc.) is sent.
+It supports the command families exercised by the current suite:
 
-## Log File Format (`logs/*.json`)
+- device read/write
+- random read/write
+- block read/write
+- read type name
+- remote control
+- self-test
+- memory read/write
+- extension-unit read/write
+- Extended Specification read/write for qualified devices
 
-Verification results are saved in the following structure. They can be used for patch writing to actual devices or for analysis.
+Supported subcommands include:
+
+- `0x0000 / 0x0001`: Q/L word / bit
+- `0x0002 / 0x0003`: iQ-R word / bit
+- `0x0080 / 0x0081`: Q/L Extended Specification word / bit
+- `0x0082 / 0x0083`: iQ-R Extended Specification word / bit
+
+## Intentional Error Injection
+
+The mock server deliberately returns common SLMP errors for a few stable cases:
+
+- `0xC050` for out-of-range addresses such as `999999`
+- `0xC056` for oversized reads above the suite limit
+- `0xC051` for intentionally invalid device-code payloads
+
+These cases are used to confirm consistent error propagation across languages.
+
+## Generated Log Files
+
+`verify.py` writes several files under `logs/`:
+
+- `packet_log_YYYYMMDD_HHMMSS.log`
+  Human-readable console transcript for one run.
+- `latest_packets.jsonl`
+  Raw REQ/RES packets streamed from the mock server.
+- `latest_markers.jsonl`
+  One marker per test case, written by `verify.py`.
+- `prev_results.json`
+  Previous normalized test outcomes used for regression comparison.
+- `response_history.json`
+  Interactive replay history used by `slmp_interactive_sender.py`.
+
+## JSONL Entry Shapes
+
+### `latest_packets.jsonl`
+
+Each line is one mock-server packet event:
 
 ```json
 {
-  "test_name": "4E Bit M Write",      // Test case name
-  "frame_type": "4e",                 // 3e or 4e
-  "command": "write",                 // read / write / read-type / remote-run / remote-stop
-  "address": "M16",                   // Specified address
-  "values": [1, 0, 1, 0, "--mode", "bit"], // Input arguments
-  "request": "54000000000000ffff03000e001000011401001000009004001010", // Raw request packet (Hex)
-  "response": "d4000000000000ffff030002000000" // Raw response packet from server (Hex)
+  "session_id": 1,
+  "direction": "REQ",
+  "routing": "NW:0,ST:255,MIO:03FF,MD:0",
+  "data": "500000ffff03000c0010000104010000640000a80300"
 }
 ```
 
-## Packet Retransmission Tool Specifications (`slmp_interactive_sender.py`)
+### `latest_markers.jsonl`
 
-- Automatically loads `logs/latest.json`.
-- **Header Analysis Function**: Automatically distinguishes response packet lengths (3E vs 4E) to receive responses of accurate length.
-- **Timeout**: Set to 3.0 seconds.
+Each line is one per-test result marker:
 
+```json
+{
+  "type": "TEST_RESULT",
+  "name": "3E QL D Word Read 3pts",
+  "result": "pass",
+  "desc": "read D100 3pts",
+  "n_clients": 3
+}
+```
+
+`slmp_interactive_sender.py` uses `n_clients` to group the corresponding REQ
+packets from `latest_packets.jsonl`.
+
+## Interactive Replay Tool
+
+`slmp_interactive_sender.py`:
+
+- loads `latest_packets.jsonl` and `latest_markers.jsonl`
+- groups request packets by test case
+- sends one selected request or a full batch to a real PLC
+- normalizes 4E response serial bytes before history comparison
+- reports response changes against `response_history.json`

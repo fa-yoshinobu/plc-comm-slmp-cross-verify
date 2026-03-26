@@ -1,6 +1,7 @@
 ﻿"""Comprehensive SLMP cross-language verification tool.
 
-Runs ~97 tests covering all high-level API methods across Python, .NET, C++.
+Runs 140 tests covering the public SLMP surface exercised by the Python,
+.NET, and C++ wrappers.
 Checks:
   1. Status parity (all clients succeed/fail on the same test)
   2. Request packet parity (all clients send identical bytes, except 4E serial)
@@ -35,7 +36,7 @@ CLIENTS_NO_CPP = {k: CLIENTS[k] for k in ("python", "dotnet")}
 # ---------------------------------------------------------------------------
 # Test cases
 # Format: (name, command, address, extra_args, flags, clients, expect_error)
-#   flags : dict of --key: value  竊・ becomes ["--key", "value", ...]
+#   flags : dict of --key -> value; rendered as ["--key", "value", ...]
 #   clients: dict (CLIENTS or CLIENTS_DP)
 #   expect_error: if True, expect status="error" from all clients
 # ---------------------------------------------------------------------------

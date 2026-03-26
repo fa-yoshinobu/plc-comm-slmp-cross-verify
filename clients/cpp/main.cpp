@@ -176,7 +176,6 @@ static slmp::DeviceAddress parseDevice(const std::string& addr) {
     if (pxU=="ZR")   return slmp::dev::ZR(slmp::dev::dec(nm));
     if (pxU=="Z")    return {slmp::DeviceCode::Z,  nm};
     if (pxU=="LZ")   return {slmp::DeviceCode::LZ, nm};
-    if (pxU=="S")    return {slmp::DeviceCode::S,  nm};
     // Hex-addressed devices
     if (pxU=="X")    return slmp::dev::X(slmp::dev::hex(nm));
     if (pxU=="Y")    return slmp::dev::Y(slmp::dev::hex(nm));

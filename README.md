@@ -1,43 +1,76 @@
 # SLMP Cross-Language Verification Tool
 
-This tool is an environment for strictly verifying the compatibility and specification compliance of SLMP client implementations among three languages: Python, .NET, and C++.
+This repository verifies semantic parity and request-packet parity across the
+Python, .NET, and C++ SLMP libraries.
 
-## Structure
-- `server/mock_server.py`: Mock server compliant with SLMP 3E/4E Binary specifications. Supports intentional error responses (NG patterns) and Extended Device (Extended Addresses).
-- `clients/`: Wrapper programs using the libraries of each language.
-- `verify.py`: Orchestrator that automatically runs all test cases and detects mismatches in "execution results" and "sent packets" between languages.
-- `slmp_interactive_sender.py`: Debug tool to select specific packets from verification logs and retransmit them to an actual PLC in an interactive format.
-- `logs/`: Directory where verification logs with timestamps (JSON format) are saved.
+## Scope
 
-## Features Verified (140 Test Cases / 2026-03-24 ALL PASS)
+The current suite in `verify.py` contains 140 tests. It covers:
 
-- **Frame**: 3E Binary / 4E Binary
-- **Devices (Basic)**: D, W, R, ZR, M, X, Y, B, SM, SD, SB, SW, L, F, V, DX, DY, Z, LZ
-- **Devices (Timer)**: TN/TS/TC, LTN/LTS/LTC, STN/STS/STC, LSTN/LSTS/LSTC
-- **Devices (Counter)**: CN/CS/CC, LCN/LCS/LCC
-- **Extended Address**: Link Direct (`J笆｡\SW`), Buffer Memory word (`U笆｡\G`, `U笆｡\HG`), Buffer Memory bit (`U笆｡\G` bit)
-- **Routing**: Other Station (Network, Station, Module I/O)
-- **Memory / ExtUnit**: Memory word read/write (4E), ExtUnit word read/write (4E)
-- **Special Operations**: Remote RUN / STOP
-- **Error Scenarios**: Error response processing for address out of range, non-existent device, data length too large, etc.
+- binary 3E and 4E frames
+- Q/L and iQ-R word and bit access
+- timers, counters, long timers/counters, and index registers
+- dword and float helpers
+- routing / other-station access
+- random access
+- block access
+- remote control operations
+- self-test and type-name reads
+- memory read/write and extension-unit read/write
+- Extended Specification qualified devices such as `Jx\SWy`, `Ux\G`, and `Ux\HG`
+- negative tests for oversized reads
 
-## Execution Procedure
+## Repository Layout
 
-### 1. Client Build
-- **.NET**: `dotnet build clients/dotnet/SlmpVerifyClient/SlmpVerifyClient.csproj`
-- **C++**: `g++ -I ../plc-comm-slmp-cpp-minimal/src clients/cpp/main.cpp ../plc-comm-slmp-cpp-minimal/src/slmp_minimal.cpp -o clients/cpp/cpp_verify_client.exe -lws2_32`
+- `server/mock_server.py`
+  Mock SLMP 3E/4E binary server used by the automated suite.
+- `clients/`
+  Python, .NET, and C++ wrapper programs that expose comparable CLI commands.
+- `verify.py`
+  Test orchestrator. Compares status parity and request-packet parity across
+  clients.
+- `slmp_interactive_sender.py`
+  Interactive replay tool for sending captured request packets to a real PLC.
+- `logs/`
+  Packet logs, test markers, console logs, and replay history.
 
-### 2. Run Verification
+## Typical Workflow
+
+### 1. Build client wrappers
+
+- .NET:
+  `dotnet build clients/dotnet/SlmpVerifyClient/SlmpVerifyClient.csproj -c Debug`
+- C++:
+  `g++ -I ../plc-comm-slmp-cpp-minimal/src clients/cpp/main.cpp ../plc-comm-slmp-cpp-minimal/src/slmp_minimal.cpp -o clients/cpp/cpp_verify_client.exe -lws2_32`
+
+### 2. Run the parity suite
+
 ```bash
 python verify.py
 ```
-After execution, `logs/packet_log_YYYYMMDD_HHMMSS.json` will be generated.
 
-### 3. Retransmission Verification to Actual PLC
+The run produces:
+
+- `logs/packet_log_YYYYMMDD_HHMMSS.log`
+- `logs/latest_packets.jsonl`
+- `logs/latest_markers.jsonl`
+- `logs/prev_results.json`
+
+### 3. Replay packets against a real PLC
+
 ```bash
 python slmp_interactive_sender.py
 ```
-Select a test case from the menu and send the generated message to the actual PLC to check its behavior.
 
-Response history comparison function: Accumulates response differences from previous sessions in `logs/response_history.json`, and notifies as `Response: Changed` when the response to the same command changes. Displays a summary of only NG items after batch execution.
+The replay tool loads `latest_packets.jsonl` and `latest_markers.jsonl`,
+groups packets by test case, and can resend one test or a full batch to a PLC.
 
+## Response History
+
+`slmp_interactive_sender.py` stores normalized responses in
+`logs/response_history.json`.
+
+- If a response matches the previous run, it is reported as unchanged.
+- If a response differs, it is reported as `Response: Changed`.
+- The sender prints an NG-only summary after batch replay so that dynamic or
+  unexpected PLC responses are easy to review.

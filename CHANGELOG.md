@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+- Cleaned up repository documentation so README, spec notes, and verification report match the current 140-test harness layout and JSONL-based log files.
+- Clarified that active follow-up items belong in the language-library repositories unless the issue is specific to the parity harness itself.
+- Removed Step Relay `S` from the C++ wrapper parser to match the current SLMP library scope. `TS/LTS/STS/LSTS/CS/LCS` remain supported.
+
 ## 2026-03-24
 
 ### Added
