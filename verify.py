@@ -17,7 +17,7 @@ from datetime import datetime
 if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-ROOT = "D:/PLC_COMM_PROJ/plc-comm-slmp-cross-verify"
+ROOT = os.path.dirname(os.path.abspath(__file__)).replace("\\", "/")
 PREV_RESULTS_FILE = f"{ROOT}/logs/prev_results.json"
 
 CLIENTS = {
@@ -337,6 +337,9 @@ def build_cmd_args(command, address, extra, flags):
 
 def run_client(client_name, command, address, extra, flags):
     cmd_prefix = CLIENTS[client_name]
+    exe_path = cmd_prefix[0]
+    if exe_path.lower().endswith(".exe") and not os.path.exists(exe_path):
+        return {"status": "error", "message": f"missing executable: {exe_path}"}
     extra_args = build_cmd_args(command, address, extra, flags)
     cmd = cmd_prefix + [HOST, str(PORT), command, address] + extra_args
     try:

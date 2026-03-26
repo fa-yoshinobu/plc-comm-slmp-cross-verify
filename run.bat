@@ -2,6 +2,10 @@
 setlocal
 set ROOT=%~dp0
 set DOTNET_PROJECT=%ROOT%clients\dotnet\SlmpVerifyClient\SlmpVerifyClient.csproj
+set CPP_INCLUDE_DIR=%ROOT%..\plc-comm-slmp-cpp-minimal\src
+set CPP_SOURCE=%ROOT%clients\cpp\main.cpp
+set CPP_LIB_SOURCE=%CPP_INCLUDE_DIR%\slmp_minimal.cpp
+set CPP_EXE=%ROOT%clients\cpp\cpp_verify_client.exe
 
 :MENU
 cls
@@ -61,7 +65,21 @@ goto MENU
 echo.
 echo [Building] %DOTNET_PROJECT%
 dotnet build "%DOTNET_PROJECT%" -c Debug
-exit /b %errorlevel%
+if errorlevel 1 exit /b %errorlevel%
+echo.
+echo [Building] %CPP_EXE%
+where g++ >nul 2>nul
+if errorlevel 1 (
+    echo g++ not found in PATH.
+    exit /b 1
+)
+g++ -I "%CPP_INCLUDE_DIR%" "%CPP_SOURCE%" "%CPP_LIB_SOURCE%" -o "%CPP_EXE%" -lws2_32
+if errorlevel 1 exit /b %errorlevel%
+if not exist "%CPP_EXE%" (
+    echo C++ executable was not created: %CPP_EXE%
+    exit /b 1
+)
+exit /b 0
 
 :BUILD_ERROR
 echo.

@@ -43,6 +43,10 @@ The current suite in `verify.py` contains 140 tests. It covers:
 - C++:
   `g++ -I ../plc-comm-slmp-cpp-minimal/src clients/cpp/main.cpp ../plc-comm-slmp-cpp-minimal/src/slmp_minimal.cpp -o clients/cpp/cpp_verify_client.exe -lws2_32`
 
+`run.bat` option `1` and option `3` build both wrappers. If the C++ executable is
+missing, `verify.py` now reports `missing executable: ...` instead of a raw
+Windows launcher error.
+
 ### 2. Run the parity suite
 
 ```bash
