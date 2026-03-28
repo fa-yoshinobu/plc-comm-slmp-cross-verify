@@ -19,6 +19,8 @@ obj/
 
 # Logs & Temp
 logs/*.json
+logs/*.jsonl
+logs/*.log
 !logs/latest.json
 server_output.tmp
 packet_log.json

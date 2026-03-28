@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- `clients/node/client_wrapper.js`: added a Node-RED-backed wrapper around `node-red-contrib-plc-comm-slmp` so the parity suite can compare the Node implementation too.
+
 ### Changed
 - Cleaned up repository documentation so README, spec notes, and verification report match the current 140-test harness layout and JSONL-based log files.
 - Clarified that active follow-up items belong in the language-library repositories unless the issue is specific to the parity harness itself.
@@ -10,6 +13,7 @@
 - `verify.py` now resolves repository root dynamically and reports a clear `missing executable` error when the C++ client has not been built.
 - Added parity coverage for the high-level named snapshot helpers: `write-named`, `read-named`, and `poll-once`.
 - The C++ wrapper build now links `slmp_high_level.cpp` so the optional high-level facade is part of the automated suite.
+- `verify.py` now adds the Node-RED wrapper to scope-aligned commands (`read`, `write`, `read-type`, `random-read`, `random-write-words`, `read-named`, `write-named`, `poll-once`) and keeps it out of commands that are outside the current Node-RED package scope.
 
 ## 2026-03-24
 

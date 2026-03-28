@@ -1,7 +1,7 @@
 # SLMP Cross-Language Verification Tool
 
 This repository verifies semantic parity and request-packet parity across the
-Python, .NET, and C++ SLMP libraries.
+Python, .NET, C++, and Node-RED SLMP libraries.
 
 ## Scope
 
@@ -26,10 +26,11 @@ The current suite in `verify.py` contains 143 tests. It covers:
 - `server/mock_server.py`
   Mock SLMP 3E/4E binary server used by the automated suite.
 - `clients/`
-  Python, .NET, and C++ wrapper programs that expose comparable CLI commands.
+  Python, .NET, C++, and Node-RED wrapper programs that expose comparable CLI commands.
 - `verify.py`
   Test orchestrator. Compares status parity and request-packet parity across
-  clients.
+  clients. The Node-RED wrapper participates in the commands that are within
+  the current `node-red-contrib-plc-comm-slmp` scope.
 - `slmp_interactive_sender.py`
   Interactive replay tool for sending captured request packets to a real PLC.
 - `logs/`

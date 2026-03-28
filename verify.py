@@ -1,13 +1,14 @@
 """Comprehensive SLMP cross-language verification tool.
 
-Runs 143 tests covering the public SLMP surface exercised by the Python,
-.NET, and C++ wrappers.
+Runs the tests defined below across the Python, .NET, and C++ wrappers.
 Checks:
   1. Status parity (all clients succeed/fail on the same test)
   2. Request packet parity (all clients send identical bytes, except 4E serial)
+  3. High-level named result parity for read/poll commands
 """
 import subprocess
 import json
+import math
 import time
 import os
 import sys
@@ -24,13 +25,14 @@ CLIENTS = {
     "python": ["python", f"{ROOT}/clients/python/client_wrapper.py"],
     "dotnet": [f"{ROOT}/clients/dotnet/SlmpVerifyClient/bin/Debug/net9.0/SlmpVerifyClient.exe"],
     "cpp":    [f"{ROOT}/clients/cpp/cpp_verify_client.exe"],
+    "node-red": ["node", f"{ROOT}/clients/node/client_wrapper.js"],
 }
 
 HOST = "127.0.0.1"
 PORT = 9000
 
 # Python + .NET only (C++ lacks readBitsModuleBuf support)
-CLIENTS_NO_CPP = {k: CLIENTS[k] for k in ("python", "dotnet")}
+CLIENTS_NO_CPP = {k: CLIENTS[k] for k in ("python", "dotnet", "node-red")}
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +209,24 @@ TESTS = [
        "read-named", "D910,D920:F,D930.3", []),
     _t("3E QL Poll Once   D910 / D920:F / D930.3",
        "poll-once", "D910,D920:F,D930.3", []),
+    _t("3E QL Named Write Z/LZ/LTN/LSTN/LCN",
+       "write-named", "Z100=321,LZ110=654,LTN120=777,LSTN130=888,LCN140=999", []),
+    _t("3E QL Named Read  Z/LZ/LTN/LSTN/LCN",
+       "read-named", "Z100,LZ110,LTN120,LSTN130,LCN140", []),
+    _t("3E QL Poll Once   Z/LZ/LTN/LSTN/LCN",
+       "poll-once", "Z100,LZ110,LTN120,LSTN130,LCN140", []),
+    _t("3E QL Named Write RD:D",
+       "write-named", "RD150:D=305419896", []),
+    _t("3E QL Named Read  RD:D",
+       "read-named", "RD150:D", []),
+    _t("3E QL Poll Once   RD:D",
+       "poll-once", "RD150:D", []),
+    _t("3E QL Named Write LTS/LTC/LSTS/LSTC/LCS/LCC",
+       "write-named", "LTS100=1,LTC110=0,LSTS120=1,LSTC130=0,LCS140=1,LCC150=0", []),
+    _t("3E QL Named Read  LTS/LTC/LSTS/LSTC/LCS/LCC",
+       "read-named", "LTS100,LTC110,LSTS120,LSTC130,LCS140,LCC150", []),
+    _t("3E QL Poll Once   LTS/LTC/LSTS/LSTC/LCS/LCC",
+       "poll-once", "LTS100,LTC110,LSTS120,LSTC130,LCS140,LCC150", []),
 
     # ===== Memory Read/Write =====
     _t("Memory Write 0x100 [100,200,300]",    "memory-write", "0x100", [100, 200, 300]),
@@ -349,6 +369,28 @@ def build_cmd_args(command, address, extra, flags):
     return args
 
 
+def node_red_supports(command, _address, _extra, _flags):
+    return command in {
+        "read",
+        "write",
+        "read-type",
+        "random-read",
+        "random-write-words",
+        "read-named",
+        "write-named",
+        "poll-once",
+    }
+
+
+def resolve_clients(command, address, extra, flags, clients):
+    resolved = dict(clients)
+    if node_red_supports(command, address, extra, flags):
+        resolved["node-red"] = CLIENTS["node-red"]
+    else:
+        resolved.pop("node-red", None)
+    return resolved
+
+
 def run_client(client_name, command, address, extra, flags):
     cmd_prefix = CLIENTS[client_name]
     exe_path = cmd_prefix[0]
@@ -405,6 +447,10 @@ def normalize_packet(hex_str, frame):
     return b.hex()
 
 
+def requires_packet_parity(command):
+    return command not in {"read-named", "write-named", "poll-once"}
+
+
 def log_print(msg, fp=None):
     print(msg)
     if fp:
@@ -412,22 +458,50 @@ def log_print(msg, fp=None):
         fp.flush()
 
 
+def comparable_success_result(command, result):
+    if result.get("status") != "success":
+        return None
+    if command in ("read-named", "poll-once"):
+        return {
+            "status": "success",
+            "addresses": result.get("addresses", []),
+            "values": result.get("values", []),
+        }
+    return None
+
+
+def results_equivalent(left, right):
+    if isinstance(left, bool) or isinstance(right, bool):
+        return left is right
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        return math.isclose(float(left), float(right), rel_tol=0.0, abs_tol=1e-6)
+    if isinstance(left, list) and isinstance(right, list):
+        return len(left) == len(right) and all(results_equivalent(lv, rv) for lv, rv in zip(left, right))
+    if isinstance(left, dict) and isinstance(right, dict):
+        if left.keys() != right.keys():
+            return False
+        return all(results_equivalent(left[key], right[key]) for key in left.keys())
+    return left == right
+
+
 # ---------------------------------------------------------------------------
 # Main test runner
 # ---------------------------------------------------------------------------
 def test_case(name, command, address, extra, flags, clients, expect_error, packets_json, log_fp, prev_result=None):
+    clients = resolve_clients(command, address, extra, flags, clients)
     prev_tag = f"  [Prev:{prev_result}]" if prev_result else ""
     log_print(f"Running: {name}{prev_tag}", log_fp)
     desc = generate_desc(command, address, extra, flags, clients, expect_error)
     log_print(f"  {desc}", log_fp)
-    line_before = count_log_lines(packets_json)
 
     results = {}
+    reqs_by_client = {}
     for client_name in clients:
+        line_before = count_log_lines(packets_json)
         results[client_name] = run_client(client_name, command, address, extra, flags)
+        reqs_by_client[client_name] = get_new_reqs(packets_json, line_before)
 
     frame = flags.get("frame", "3e")
-    reqs = get_new_reqs(packets_json, line_before)
     client_names = list(clients.keys())
 
     # --- Status parity check ---
@@ -449,19 +523,34 @@ def test_case(name, command, address, extra, flags, clients, expect_error, packe
         if ref_status == "error" and not expect_error:
             log_print(f"  !!! ALL CLIENTS ERRORED: {results[ref_name].get('message','')}", log_fp)
             all_ok = False
+        elif ref_status == "success":
+            ref_payload = comparable_success_result(command, results[ref_name])
+            if ref_payload is not None:
+                ref_json = json.dumps(ref_payload, sort_keys=True, ensure_ascii=False)
+                for cn in client_names[1:]:
+                    cur_payload = comparable_success_result(command, results[cn])
+                    cur_json = json.dumps(cur_payload, sort_keys=True, ensure_ascii=False)
+                    if not results_equivalent(ref_payload, cur_payload):
+                        log_print(f"  !!! RESULT MISMATCH {ref_name} vs {cn}", log_fp)
+                        log_print(f"      {ref_name}: {ref_json}", log_fp)
+                        log_print(f"      {cn}: {cur_json}", log_fp)
+                        all_ok = False
 
     # --- Packet parity check ---
-    n = len(client_names)
-    if len(reqs) >= n:
-        normalized = [normalize_packet(reqs[i], frame) for i in range(n)]
-        if len(set(normalized)) > 1:
-            log_print(f"  !!! PACKET MISMATCH:", log_fp)
-            for cn, pkt in zip(client_names, normalized):
-                log_print(f"      {cn}: {pkt}", log_fp)
-            all_ok = False
+    if client_names and requires_packet_parity(command):
+        ref_name = client_names[0]
+        ref_packets = [normalize_packet(pkt, frame) for pkt in reqs_by_client.get(ref_name, [])]
+        for cn in client_names[1:]:
+            cur_packets = [normalize_packet(pkt, frame) for pkt in reqs_by_client.get(cn, [])]
+            if cur_packets != ref_packets:
+                log_print(f"  !!! PACKET MISMATCH:", log_fp)
+                log_print(f"      {ref_name}: {ref_packets}", log_fp)
+                log_print(f"      {cn}: {cur_packets}", log_fp)
+                all_ok = False
+                break
         else:
-            pass  # packets match
-    elif len(reqs) > 0 and len(reqs) < n:
+            pass  # packet sequences match
+    elif any(reqs_by_client.values()):
         # Some clients may not have sent (e.g., connection failed before request)
         pass
 

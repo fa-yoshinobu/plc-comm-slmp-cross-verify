@@ -84,7 +84,7 @@ namespace SlmpVerifyClient
                     {
                         status = "success",
                         addresses,
-                        values = addresses.Select(key => values[key]).ToArray(),
+                        values = addresses.Select(key => NormalizeNamedValueForJson(key, values[key])).ToArray(),
                     };
                 }
                 else if (command == "write-named")
@@ -102,7 +102,7 @@ namespace SlmpVerifyClient
                         {
                             status = "success",
                             addresses,
-                            values = addresses.Select(key => snapshot[key]).ToArray(),
+                            values = addresses.Select(key => NormalizeNamedValueForJson(key, snapshot[key])).ToArray(),
                         };
                         break;
                     }
@@ -299,6 +299,31 @@ namespace SlmpVerifyClient
                 return double.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
 
             return int.Parse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        static object NormalizeNamedValueForJson(string address, object value)
+        {
+            if (address.Contains('.'))
+                return Convert.ToBoolean(value, System.Globalization.CultureInfo.InvariantCulture);
+
+            string baseAddress = address.Split(':', 2)[0].Trim();
+            var device = SlmpDeviceParser.Parse(baseAddress);
+            if (IsBitDevice(device.Code))
+                return Convert.ToBoolean(value, System.Globalization.CultureInfo.InvariantCulture);
+
+            string dtype = "U";
+            int suffixIndex = address.LastIndexOf(':');
+            if (suffixIndex >= 0 && suffixIndex + 1 < address.Length)
+                dtype = address[(suffixIndex + 1)..].Trim().ToUpperInvariant();
+
+            return dtype switch
+            {
+                "F" => Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture),
+                "D" => Convert.ToUInt32(value, System.Globalization.CultureInfo.InvariantCulture),
+                "L" => Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture),
+                "S" => Convert.ToInt16(value, System.Globalization.CultureInfo.InvariantCulture),
+                _ => Convert.ToUInt16(value, System.Globalization.CultureInfo.InvariantCulture),
+            };
         }
 
         static bool IsBitDevice(SlmpDeviceCode code)

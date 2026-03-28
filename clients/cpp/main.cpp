@@ -279,8 +279,9 @@ static slmp::DeviceAddress parseDevice(const std::string& addr) {
     if (pxU=="SD")   return slmp::dev::SD(slmp::dev::dec(nm));
     if (pxU=="R")    return slmp::dev::R(slmp::dev::dec(nm));
     if (pxU=="ZR")   return slmp::dev::ZR(slmp::dev::dec(nm));
-    if (pxU=="Z")    return {slmp::DeviceCode::Z,  nm};
-    if (pxU=="LZ")   return {slmp::DeviceCode::LZ, nm};
+    if (pxU=="Z")    return slmp::dev::Z(slmp::dev::dec(nm));
+    if (pxU=="LZ")   return slmp::dev::LZ(slmp::dev::dec(nm));
+    if (pxU=="RD")   return slmp::dev::RD(slmp::dev::dec(nm));
     // Hex-addressed devices
     if (pxU=="X")    return slmp::dev::X(slmp::dev::hex(nm));
     if (pxU=="Y")    return slmp::dev::Y(slmp::dev::hex(nm));
@@ -297,17 +298,17 @@ static slmp::DeviceAddress parseDevice(const std::string& addr) {
     if (pxU=="TS")   return slmp::dev::TS(slmp::dev::dec(nm));
     if (pxU=="TC")   return slmp::dev::TC(slmp::dev::dec(nm));
     // Long Timer
-    if (pxU=="LTN")  return {slmp::DeviceCode::LTN, nm};
-    if (pxU=="LTS")  return {slmp::DeviceCode::LTS, nm};
-    if (pxU=="LTC")  return {slmp::DeviceCode::LTC, nm};
+    if (pxU=="LTN")  return slmp::dev::LTN(slmp::dev::dec(nm));
+    if (pxU=="LTS")  return slmp::dev::LTS(slmp::dev::dec(nm));
+    if (pxU=="LTC")  return slmp::dev::LTC(slmp::dev::dec(nm));
     // Retentive Timer
     if (pxU=="STN")  return slmp::dev::STN(slmp::dev::dec(nm));
     if (pxU=="STS")  return slmp::dev::STS(slmp::dev::dec(nm));
     if (pxU=="STC")  return slmp::dev::STC(slmp::dev::dec(nm));
     // Long Retentive Timer
-    if (pxU=="LSTN") return {slmp::DeviceCode::LSTN, nm};
-    if (pxU=="LSTS") return {slmp::DeviceCode::LSTS, nm};
-    if (pxU=="LSTC") return {slmp::DeviceCode::LSTC, nm};
+    if (pxU=="LSTN") return slmp::dev::LSTN(slmp::dev::dec(nm));
+    if (pxU=="LSTS") return slmp::dev::LSTS(slmp::dev::dec(nm));
+    if (pxU=="LSTC") return slmp::dev::LSTC(slmp::dev::dec(nm));
     // Counter
     if (pxU=="CN")   return slmp::dev::CN(slmp::dev::dec(nm));
     if (pxU=="CS")   return slmp::dev::CS(slmp::dev::dec(nm));
