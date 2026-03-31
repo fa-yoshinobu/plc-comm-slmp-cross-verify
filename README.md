@@ -27,6 +27,7 @@ The current suite in `verify.py` contains 143 tests. It covers:
   Mock SLMP 3E/4E binary server used by the automated suite.
 - `clients/`
   Python, .NET, C++, and Node-RED wrapper programs that expose comparable CLI commands.
+  The .NET wrapper opens the session through `SlmpConnectionOptions` plus `SlmpClientFactory` before running the shared command set.
 - `verify.py`
   Test orchestrator. Compares status parity and request-packet parity across
   clients. The Node-RED wrapper participates in the commands that are within

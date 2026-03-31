@@ -43,12 +43,12 @@ namespace SlmpVerifyClient
                 else cmd_args.Add(args[i]);
             }
 
-            using var client = new SlmpClient(host, int.Parse(port)) { FrameType = frame, CompatibilityMode = series };
-            if (target.HasValue) client.TargetAddress = target.Value;
+            var options = new SlmpConnectionOptions(host) { Port = int.Parse(port), FrameType = frame, CompatibilityMode = series };
+            if (target.HasValue) options = options with { Target = target.Value };
             object? result = null;
             try
             {
-                await client.OpenAsync();
+                await using var client = await SlmpClientFactory.OpenAndConnectAsync(options);
 
                 // --- Basic device read/write ---
                 if (command == "read")
@@ -109,11 +109,11 @@ namespace SlmpVerifyClient
                 }
 
                 // --- Remote operations ---
-                else if (command == "remote-run") { await client.RemoteRunAsync(); result = new { status = "success" }; }
-                else if (command == "remote-stop") { await client.RemoteStopAsync(); result = new { status = "success" }; }
-                else if (command == "remote-pause") { await client.RemotePauseAsync(); result = new { status = "success" }; }
-                else if (command == "remote-latch-clear") { await client.RemoteLatchClearAsync(); result = new { status = "success" }; }
-                else if (command == "remote-reset") { await client.RemoteResetAsync(0x0000, false); result = new { status = "success" }; }
+                else if (command == "remote-run") { await client.ExecuteAsync(inner => inner.RemoteRunAsync()); result = new { status = "success" }; }
+                else if (command == "remote-stop") { await client.ExecuteAsync(inner => inner.RemoteStopAsync()); result = new { status = "success" }; }
+                else if (command == "remote-pause") { await client.ExecuteAsync(inner => inner.RemotePauseAsync()); result = new { status = "success" }; }
+                else if (command == "remote-latch-clear") { await client.ExecuteAsync(inner => inner.RemoteLatchClearAsync()); result = new { status = "success" }; }
+                else if (command == "remote-reset") { await client.ExecuteAsync(inner => inner.RemoteResetAsync(0x0000, false)); result = new { status = "success" }; }
 
                 // --- Random access ---
                 else if (command == "random-read")
@@ -157,7 +157,7 @@ namespace SlmpVerifyClient
                 else if (command == "self-test")
                 {
                     var data = Encoding.ASCII.GetBytes(string.IsNullOrEmpty(address) ? "TEST" : address);
-                    var echoed = await client.SelfTestLoopbackAsync(data);
+                    var echoed = await client.ExecuteAsync(inner => inner.SelfTestLoopbackAsync(data));
                     result = new { status = "success", echo = Encoding.ASCII.GetString(echoed) };
                 }
 
