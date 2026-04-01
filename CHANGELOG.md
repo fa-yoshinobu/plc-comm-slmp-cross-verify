@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-04-01
+
+### Changed
+- Updated the .NET verification wrapper to open connections through `SlmpConnectionOptions`, `SlmpClientFactory`, and the queued client path.
+- Added Node-RED-backed wrapper coverage for the scope-aligned commands that overlap with the current package surface.
+- Added high-level named helper parity cases and linked the optional C++ high-level facade into the automated suite.
+
 ### Added
 - `clients/node/client_wrapper.js`: added a Node-RED-backed wrapper around `node-red-contrib-plc-comm-slmp` so the parity suite can compare the Node implementation too.
 
