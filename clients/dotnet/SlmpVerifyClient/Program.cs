@@ -125,8 +125,8 @@ namespace SlmpVerifyClient
                 }
                 else if (command == "random-write-words")
                 {
-                    var wItems = ParseKvPairs(wordsKv).Select(p => (SlmpDeviceParser.Parse(p.Key), (ushort)p.Value)).ToArray();
-                    var dwItems = ParseKvPairs(dwordsKv).Select(p => (SlmpDeviceParser.Parse(p.Key), (uint)p.Value)).ToArray();
+                    var wItems = ParseKvPairs(wordsKv).Select(p => (SlmpDeviceParser.Parse(p.Key), checked((ushort)p.Value))).ToArray();
+                    var dwItems = ParseKvPairs(dwordsKv).Select(p => (SlmpDeviceParser.Parse(p.Key), checked((uint)p.Value))).ToArray();
                     await client.WriteRandomWordsAsync(wItems, dwItems);
                     result = new { status = "success" };
                 }
@@ -242,13 +242,16 @@ namespace SlmpVerifyClient
             Console.WriteLine(JsonSerializer.Serialize(result));
         }
 
-        static List<KeyValuePair<string, int>> ParseKvPairs(string s)
+        static List<KeyValuePair<string, long>> ParseKvPairs(string s)
         {
             if (string.IsNullOrEmpty(s)) return [];
             return s.Split(',').Select(item =>
             {
                 var parts = item.Split('=', 2);
-                return new KeyValuePair<string, int>(parts[0].Trim(), int.Parse(parts[1].Trim()));
+                return new KeyValuePair<string, long>(
+                    parts[0].Trim(),
+                    long.Parse(parts[1].Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture)
+                );
             }).ToList();
         }
 
@@ -305,7 +308,18 @@ namespace SlmpVerifyClient
             if (address.Contains(':') && address[(address.LastIndexOf(':') + 1)..].Equals("F", StringComparison.OrdinalIgnoreCase))
                 return double.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
 
-            return int.Parse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture);
+            string dtype = "U";
+            int suffixIndex = address.LastIndexOf(':');
+            if (suffixIndex >= 0 && suffixIndex + 1 < address.Length)
+                dtype = address[(suffixIndex + 1)..].Trim().ToUpperInvariant();
+
+            return dtype switch
+            {
+                "D" => uint.Parse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture),
+                "L" => int.Parse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture),
+                "S" => short.Parse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture),
+                _ => int.Parse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture),
+            };
         }
 
         static object NormalizeNamedValueForJson(string address, object value)
