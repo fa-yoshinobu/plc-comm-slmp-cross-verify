@@ -5,7 +5,7 @@
         "r120pcpu_tcp1025": {
           "comparison_mode": "exact",
           "responses": [
-            "d00000ffff0300040000000010"
+            "d00000ffff0300040000001010"
           ],
           "note": "Validated F-device bit readback differs from the mock fixture on this target."
         }
@@ -69,11 +69,11 @@
     "3E Remote LATCH CLEAR": {
       "live_profiles": {
         "r120pcpu_tcp1025": {
-          "comparison_mode": "end_code",
-          "end_codes": [
-            16403
+          "comparison_mode": "exact",
+          "responses": [
+            "d00000ffff030002000000"
           ],
-          "note": "Remote latch clear is target-dependent on the validated R120PCPU path."
+          "note": "The validated target currently accepts remote latch clear on this path."
         }
       }
     },
@@ -114,6 +114,188 @@
             8
           ],
           "note": "Structured long-timer helper bits map differently on the validated target than in the generic mock fixture."
+        }
+      }
+    },
+    "4E iQR Walk LongCounterBits LCS10/LCC10 Read  ON #1": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "shape",
+          "end_codes": [
+            0,
+            0
+          ],
+          "lengths": [
+            8,
+            8
+          ],
+          "note": "Validated long-counter contact/coil readback remains target-state dependent even after successful writes."
+        }
+      }
+    },
+    "4E iQR Walk LongCounterBits LCS10/LCC10 Read  OFF #1": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "shape",
+          "end_codes": [
+            0,
+            0
+          ],
+          "lengths": [
+            8,
+            8
+          ],
+          "note": "Validated long-counter contact/coil readback remains target-state dependent even after successful writes."
+        }
+      }
+    },
+    "4E iQR Walk LongCounterBits LCS10/LCC10 Read  ON #2": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "shape",
+          "end_codes": [
+            0,
+            0
+          ],
+          "lengths": [
+            8,
+            8
+          ],
+          "note": "Validated long-counter contact/coil readback remains target-state dependent even after successful writes."
+        }
+      }
+    },
+    "4E iQR Walk LongCounterBits LCS10/LCC10 Read  OFF #2": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "shape",
+          "end_codes": [
+            0,
+            0
+          ],
+          "lengths": [
+            8,
+            8
+          ],
+          "note": "Validated long-counter contact/coil readback remains target-state dependent even after successful writes."
+        }
+      }
+    },
+    "4E iQR Walk LongBits LTS10/LTC10/LSTS10/LSTC10 Read  ON #1": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "exact",
+          "responses": [
+            "d4000000000000ffff03000a0000000903000003000000",
+            "d4000000000000ffff03000a0000000000000003000000"
+          ],
+          "note": "Validated long state bits read back as asserted on this target after the paired ON write."
+        }
+      }
+    },
+    "4E iQR Walk LongBits LTS10/LTC10/LSTS10/LSTC10 Read  ON #2": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "exact",
+          "responses": [
+            "d4000000000000ffff03000a0000000903000003000000",
+            "d4000000000000ffff03000a0000000000000003000000"
+          ],
+          "note": "Validated long state bits read back as asserted on this target after the paired ON write."
+        }
+      }
+    },
+    "4E iQR Walk LongDWords LTN10/LSTN10/LCN10/LZ0/LZ1 Read  SET A": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "exact",
+          "responses": [
+            "d4000000000000ffff03000a000000fe7876506fbbcc03",
+            "d4000000000000ffff03000a000000045ca45900000000",
+            "d4000000000000ffff03000a00000041a5c72b00000000",
+            "d4000000000000ffff03000a0000001f998a1000000000"
+          ],
+          "note": "Validated long dword walk reads back the actual written LTN/LSTN/LCN/LZ values on this target."
+        }
+      }
+    },
+    "4E iQR Walk LongDWords LTN10/LSTN10/LCN10/LZ0/LZ1 Read  SET B": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "exact",
+          "responses": [
+            "d4000000000000ffff03000a00000019fb6e681b3bf34d",
+            "d4000000000000ffff03000a00000066a9fc7200000000",
+            "d4000000000000ffff03000a00000049ad5e1500000000",
+            "d4000000000000ffff03000a000000f390734000000000"
+          ],
+          "note": "Validated long dword walk reads back the actual written LTN/LSTN/LCN/LZ values on this target."
+        }
+      }
+    },
+    "4E iQR Walk J1\\Y10 Ext Bit Read  ON #1": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "exact",
+          "responses": [
+            "d4000000000000ffff03000300000010"
+          ],
+          "note": "Validated J-link Y bit reads use the asserted 0x10 packed-bit response on this target."
+        }
+      }
+    },
+    "4E iQR Walk J1\\Y10 Ext Bit Read  ON #2": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "exact",
+          "responses": [
+            "d4000000000000ffff03000300000010"
+          ],
+          "note": "Validated J-link Y bit reads use the asserted 0x10 packed-bit response on this target."
+        }
+      }
+    },
+    "4E iQR Walk J1\\B10 Ext Bit Read  ON #1": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "exact",
+          "responses": [
+            "d4000000000000ffff03000300000010"
+          ],
+          "note": "Validated J-link B bit reads use the asserted 0x10 packed-bit response on this target."
+        }
+      }
+    },
+    "4E iQR Walk J1\\B10 Ext Bit Read  ON #2": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "exact",
+          "responses": [
+            "d4000000000000ffff03000300000010"
+          ],
+          "note": "Validated J-link B bit reads use the asserted 0x10 packed-bit response on this target."
+        }
+      }
+    },
+    "4E iQR Walk J1\\W10 Ext Word Read  SET A": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "exact",
+          "responses": [
+            "d4000000000000ffff030004000000dee9"
+          ],
+          "note": "Validated J-link W readback matches the written word value on this target."
+        }
+      }
+    },
+    "4E iQR Walk J1\\W10 Ext Word Read  SET B": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "exact",
+          "responses": [
+            "d4000000000000ffff03000400000055e2"
+          ],
+          "note": "Validated J-link W readback matches the written word value on this target."
         }
       }
     },

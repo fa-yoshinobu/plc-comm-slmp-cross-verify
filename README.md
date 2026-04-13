@@ -16,6 +16,11 @@ This repo has three jobs:
 - **Cross-library parity**
   Use `verify.py` to compare status parity, packet parity, and selected
   high-level helper results.
+- **Automated device walk**
+  The parity suite also contains the validated 4E/iQR device-walk pattern used
+  for real-PLC smoke checks: bit devices repeat `on -> off -> on -> off`,
+  word devices perform two deterministic pseudo-random writes, and the J1
+  extended devices are covered with the same automated sequence.
 - **Single-client debug**
   Use `verify.py --clients ...` when one wrapper or one library needs isolated
   verification before comparing it with the others.
