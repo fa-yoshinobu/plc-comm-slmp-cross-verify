@@ -28,6 +28,20 @@ on:
         required: true
         type: boolean
         default: true
+      summary_only:
+        description: Suppress PASS lines and print only failures plus summary
+        required: true
+        type: boolean
+        default: true
+      fail_fast:
+        description: Stop after the first failure
+        required: true
+        type: boolean
+        default: false
+      retries:
+        description: Optional retry count override
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -118,6 +132,9 @@ jobs:
           ../plc-comm-slmp-cpp-minimal/src/slmp_high_level.cpp
           -o clients/cpp/cpp_verify_client
 
+      - name: Validate checked-in specs
+        run: python validate_specs.py
+
       - name: Run live device consistency verification
         run: |
           args=(
@@ -135,7 +152,25 @@ jobs:
           else
             args+=(--no-restore-after)
           fi
+          if [[ "${{ inputs.summary_only }}" == "true" ]]; then
+            args+=(--summary-only)
+          fi
+          if [[ "${{ inputs.fail_fast }}" == "true" ]]; then
+            args+=(--fail-fast)
+          fi
+          if [[ -n "${{ inputs.retries }}" ]]; then
+            args+=(--retries "${{ inputs.retries }}")
+          fi
           "${args[@]}"
+
+      - name: Publish device consistency summary
+        if: always()
+        run: |
+          if [[ -f logs/latest_device_consistency.md ]]; then
+            cat logs/latest_device_consistency.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No device consistency markdown report found." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload device consistency logs
         if: always()

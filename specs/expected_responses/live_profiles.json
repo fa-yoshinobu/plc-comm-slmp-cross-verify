@@ -325,7 +325,13 @@
       "live_profiles": {
         "r120pcpu_tcp1025": {
           "comparison_mode": "shape",
-          "note": "Validated buffer-memory content is target-state dependent even when the request shape is accepted."
+          "note": "Validated buffer-memory content is target-state dependent even when the request shape is accepted.",
+          "end_codes": [
+            0
+          ],
+          "lengths": [
+            4
+          ]
         }
       }
     },

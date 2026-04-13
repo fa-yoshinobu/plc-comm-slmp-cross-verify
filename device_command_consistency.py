@@ -49,6 +49,8 @@ def parse_args():
     parser.add_argument("--settle-delay-ms", type=int)
     parser.add_argument("--report-json", default=DEFAULT_REPORT_JSON)
     parser.add_argument("--report-md", default=DEFAULT_REPORT_MD)
+    parser.add_argument("--summary-only", action="store_true", help="Suppress per-device PASS lines and print only failures plus the final summary.")
+    parser.add_argument("--fail-fast", action="store_true", help="Stop the run after the first failed device/client check.")
     restore_group = parser.add_mutually_exclusive_group()
     restore_group.add_argument("--restore-after", dest="restore_after", action="store_true")
     restore_group.add_argument("--no-restore-after", dest="restore_after", action="store_false")
@@ -115,6 +117,20 @@ def load_profile(profile_name: str):
     payload["_path"] = profile_path
     payload["_devices"] = expand_profile_devices(payload)
     return payload
+
+
+def validate_runtime_profile(payload: dict):
+    if not isinstance(payload.get("name"), str) or not payload["name"]:
+        make_error("profile.name must be a non-empty string")
+    defaults = payload.get("defaults")
+    if not isinstance(defaults, dict):
+        make_error("profile.defaults must be an object")
+    if defaults.get("frame") not in {"3e", "4e"}:
+        make_error("profile.defaults.frame must be '3e' or '4e'")
+    if defaults.get("series") not in {"ql", "iqr"}:
+        make_error("profile.defaults.series must be 'ql' or 'iqr'")
+    if not isinstance(payload.get("_devices"), list) or not payload["_devices"]:
+        make_error("profile must expand to at least one device")
 
 
 def load_unsupported_command_map(path: str = UNSUPPORTED_PATHS_FILE):
@@ -966,9 +982,31 @@ def markdown_report(payload):
     return "\n".join(lines)
 
 
+def render_console_summary(payload):
+    lines = [
+        f"summary: passed={payload['passed']} failed={payload['failed']} total={payload['total']} "
+        f"profile={payload['profile']} duration={payload['duration_seconds']:.2f}s"
+    ]
+    for client, summary in sorted(payload["client_summary"].items()):
+        lines.append(
+            f"client {client}: pass={summary['passed']} fail={summary['failed']} total={summary['total']} "
+            f"duration={summary['duration_ms'] / 1000:.2f}s"
+        )
+    if payload["restore_summary"]:
+        restore_bits = ", ".join(f"{key}={value}" for key, value in sorted(payload["restore_summary"].items()))
+        lines.append(f"restore: {restore_bits}")
+    if payload["failure_classes"]:
+        for item in payload["failure_classes"]:
+            lines.append(
+                f"failure-class {item['class']}: count={item['count']} clients={','.join(item['clients'])} devices={','.join(item['devices'])}"
+            )
+    return "\n".join(lines)
+
+
 def main():
     args = parse_args()
     profile_payload = load_profile(args.profile)
+    validate_runtime_profile(profile_payload)
     unsupported_map = load_unsupported_command_map()
     options = runtime_options(profile_payload, args)
 
@@ -1012,7 +1050,8 @@ def main():
                     **details,
                 }
                 results.append(result)
-                print(f"PASS {client:<8} {spec['kind']:<16} {spec['address']}")
+                if not args.summary_only:
+                    print(f"PASS {client:<8} {spec['kind']:<16} {spec['address']}")
             except Exception as exc:  # noqa: BLE001
                 duration_ms = round((time.monotonic() - started_step) * 1000, 2)
                 failure_class = classify_failure(str(exc))
@@ -1026,6 +1065,10 @@ def main():
                 failures.append(failure)
                 results.append(failure)
                 print(f"FAIL {client:<8} {spec['kind']:<16} {spec['address']} :: {exc}")
+                if args.fail_fast:
+                    break
+        if args.fail_fast and failures:
+            break
 
     finished_at = datetime.now(UTC)
     summary = summarize_results(results, failures)
@@ -1060,11 +1103,7 @@ def main():
     with open(report_md, "w", encoding="utf-8") as handle:
         handle.write(markdown_report(payload))
 
-    print(
-        "summary: "
-        f"passed={payload['passed']} failed={payload['failed']} total={payload['total']} "
-        f"profile={payload['profile']} duration={payload['duration_seconds']:.2f}s"
-    )
+    print(render_console_summary(payload))
     if failures:
         raise SystemExit(1)
 
