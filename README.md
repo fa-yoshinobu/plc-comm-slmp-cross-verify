@@ -9,6 +9,17 @@ This repo has three jobs:
 - single-client debug runs inside the same harness
 - live PLC replay against a validated target profile
 
+The tools are layered:
+
+- `verify.py`
+  Canonical mock-baseline parity gate.
+- `slmp_live_verify.py`
+  Real-PLC replay against the saved mock baseline plus checked-in live profile overrides.
+- `device_command_consistency.py`
+  Real-PLC consistency runner that compares multiple supported command paths on the same address.
+- `validate_specs.py`
+  Fast schema check for checked-in JSON specs before CI or live runs.
+
 ## Use This Repo For
 
 - **Library unit tests**
@@ -49,6 +60,7 @@ python verify.py --clients python --case-pattern "LTN" --list-cases
 ### Run the full parity suite
 
 ```bash
+python validate_specs.py
 python verify.py
 ```
 
@@ -97,12 +109,33 @@ For the validated `R120PCPU` TCP path:
 python slmp_live_verify.py --ip 192.168.250.100 --port 1025 --profile r120pcpu_tcp1025 --include-stateful --include-remote
 ```
 
+### Run the live device consistency sweep
+
+```bash
+python device_command_consistency.py --host 192.168.250.100 --port 1025 --clients all
+```
+
+Useful flags:
+
+- `--devices D10,J1\W10`
+  Limit the run to a device subset.
+- `--summary-only`
+  Suppress per-device PASS lines and print only failures plus the final summary.
+- `--fail-fast`
+  Stop after the first failure while still writing reports.
+- `--no-restore-after`
+  Skip restore writes when you only want to observe the forward path.
+
 ## Repository Layout
 
 - `verify.py`
   Main harness for full parity runs and single-client debug runs.
 - `slmp_live_verify.py`
   Automated real-PLC replay verifier.
+- `device_command_consistency.py`
+  Multi-command live PLC consistency runner with restore/report support.
+- `validate_specs.py`
+  Schema validator for checked-in device-consistency and unsupported-path specs.
 - `slmp_interactive_sender.py`
   Manual replay/debug tool for saved request packets.
 - `server/mock_server.py`
@@ -114,6 +147,8 @@ python slmp_live_verify.py --ip 192.168.250.100 --port 1025 --profile r120pcpu_t
   normalization, and golden request frames.
 - `specs/expected_responses/`
   Checked-in live-profile response overrides keyed by verification case name.
+- `specs/device_consistency/`
+  Checked-in live device matrix profiles and supported-path policy.
 
 ## Artifact Rules
 
@@ -130,6 +165,8 @@ python slmp_live_verify.py --ip 192.168.250.100 --port 1025 --profile r120pcpu_t
 - `.github/workflows/live-r120-profile.yml`
   Manual real-PLC job for the validated `r120pcpu_tcp1025` profile on a
   reachable self-hosted runner.
+- `.github/workflows/live-device-consistency.yml`
+  Manual real-PLC multi-command consistency job with job-summary output.
 
 ## Document Map
 

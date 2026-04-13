@@ -110,6 +110,9 @@ jobs:
           ../plc-comm-slmp-cpp-minimal/src/slmp_high_level.cpp
           -o clients/cpp/cpp_verify_client
 
+      - name: Validate checked-in specs
+        run: python validate_specs.py
+
       - name: Rebuild mock baseline
         run: python verify.py
 
@@ -129,6 +132,15 @@ jobs:
             args+=(--include-remote)
           fi
           "${args[@]}"
+
+      - name: Publish live verification summary
+        if: always()
+        run: |
+          if [[ -f logs/latest_live_verify.md ]]; then
+            cat logs/latest_live_verify.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No live verification markdown report found." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload live verification logs
         if: always()

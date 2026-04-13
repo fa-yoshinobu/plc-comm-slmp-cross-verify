@@ -118,6 +118,9 @@ jobs:
           ../plc-comm-slmp-cpp-minimal/src/slmp_high_level.cpp
           -o clients/cpp/cpp_verify_client
 
+      - name: Validate checked-in specs
+        run: python validate_specs.py
+
       - name: Run live device consistency verification
         run: |
           args=(
@@ -136,6 +139,15 @@ jobs:
             args+=(--no-restore-after)
           fi
           "${args[@]}"
+
+      - name: Publish device consistency summary
+        if: always()
+        run: |
+          if [[ -f logs/latest_device_consistency.md ]]; then
+            cat logs/latest_device_consistency.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No device consistency markdown report found." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload device consistency logs
         if: always()

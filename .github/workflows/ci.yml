@@ -94,6 +94,9 @@ jobs:
           ../plc-comm-slmp-cpp-minimal/src/slmp_high_level.cpp
           -o clients/cpp/cpp_verify_client
 
+      - name: Validate checked-in specs
+        run: python validate_specs.py
+
       - name: Run mock baseline parity suite
         run: python verify.py
 
