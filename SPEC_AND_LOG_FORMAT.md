@@ -8,6 +8,9 @@ cross-verify harness.
 Use `README.md` for workflow and command examples. Use this file only for
 artifact semantics.
 
+Checked-in target-specific response overrides live under
+`specs/expected_responses/`.
+
 ## Mock Server Scope
 
 `server/mock_server.py` is the protocol fixture used by `verify.py`.
@@ -61,6 +64,22 @@ writes timestamped artifacts instead:
 - `logs/live_cases_<timestamp>.jsonl`
 
 This avoids overwriting the canonical baseline unless `--write-latest` is used.
+
+## Checked-In Expected Responses
+
+`specs/expected_responses/live_profiles.json` contains target-specific live
+comparison overrides keyed by verification case name.
+
+Typical contents:
+
+- `comparison_mode`
+- `responses`
+- `end_codes`
+- `lengths`
+- `note`
+
+`verify.py` merges those checked-in expectations into the generated live-case
+records written under `logs/`.
 
 ## Generated Files
 

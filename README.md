@@ -105,6 +105,8 @@ python slmp_live_verify.py --ip 192.168.250.100 --port 1025 --profile r120pcpu_t
 - `specs/shared/`
   Canonical shared JSON vectors for device encoding, address parsing, address
   normalization, and golden request frames.
+- `specs/expected_responses/`
+  Checked-in live-profile response overrides keyed by verification case name.
 
 ## Artifact Rules
 
@@ -128,5 +130,7 @@ python slmp_live_verify.py --ip 192.168.250.100 --port 1025 --profile r120pcpu_t
   Entry point and workflow guide.
 - `SPEC_AND_LOG_FORMAT.md`
   Packet/log/live-case file shapes and mock-fixture scope.
+- `specs/expected_responses/README.md`
+  Checked-in target-profile response expectations.
 - `CHANGELOG.md`
   Repository release history.

@@ -6,6 +6,7 @@
 - Simplified the documentation set so `README.md` is the entry point, `SPEC_AND_LOG_FORMAT.md` keeps artifact details, and duplicate status/TODO documents were removed.
 - `verify.py` now supports filtered single-client debug runs through `--clients`, `--case-pattern`, and `--list-cases` without requiring a separate verification tool.
 - Filtered `verify.py` runs now write timestamped packet/marker/live-case artifacts by default so they do not overwrite the canonical `latest_*` baseline.
+- Live PLC response overrides moved out of `verify.py` into `specs/expected_responses/live_profiles.json`.
 
 ## [0.1.4] - 2026-04-01
 

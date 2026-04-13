@@ -22,6 +22,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
 ROOT = os.path.dirname(os.path.abspath(__file__)).replace("\\", "/")
 PREV_RESULTS_FILE = f"{ROOT}/logs/prev_results.json"
 LIVE_CASES_FILE = f"{ROOT}/logs/latest_live_cases.jsonl"
+EXPECTED_RESPONSES_FILE = f"{ROOT}/specs/expected_responses/live_profiles.json"
 
 
 def _resolve_dotnet_client():
@@ -66,25 +67,38 @@ CLIENTS_NO_CPP = {k: CLIENTS[k] for k in ("python", "dotnet", "node-red")}
 #   expect_error: if True, expect status="error" from all clients
 # ---------------------------------------------------------------------------
 def _t(name, cmd, addr, extra=None, flags=None, clients=None, expect_error=False, meta=None):
-    return (name, cmd, addr, extra or [], flags or {}, clients or CLIENTS, expect_error, meta or {})
+    return (
+        name,
+        cmd,
+        addr,
+        extra or [],
+        flags or {},
+        clients or CLIENTS,
+        expect_error,
+        merge_case_meta(name, meta or {}),
+    )
 
 
-R120_PROFILE = "r120pcpu_tcp1025"
+def load_expected_case_metadata(path=EXPECTED_RESPONSES_FILE):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception:
+        return {}
+
+    cases = payload.get("cases", {})
+    return cases if isinstance(cases, dict) else {}
 
 
-def _live_profile(profile, *, comparison_mode=None, responses=None, end_codes=None, lengths=None, note=None):
-    override = {}
-    if comparison_mode is not None:
-        override["comparison_mode"] = comparison_mode
-    if responses is not None:
-        override["responses"] = responses
-    if end_codes is not None:
-        override["end_codes"] = end_codes
-    if lengths is not None:
-        override["lengths"] = lengths
-    if note is not None:
-        override["note"] = note
-    return {"live_profiles": {profile: override}}
+EXPECTED_CASE_METADATA = load_expected_case_metadata()
+
+
+def merge_case_meta(name, inline_meta):
+    merged = dict(inline_meta or {})
+    file_meta = EXPECTED_CASE_METADATA.get(name)
+    if isinstance(file_meta, dict):
+        merged.update(file_meta)
+    return merged
 
 
 TESTS = [
@@ -124,19 +138,7 @@ TESTS = [
     _t("3E QL L   Bit  Write [1,0,1,0]",    "write", "L0",    [1, 0, 1, 0],  {"mode": "bit"}),
     _t("3E QL L   Bit  Read  4pts",          "read",  "L0",    [4],            {"mode": "bit"}),
     _t("3E QL F   Bit  Write [1,0,1,0]",    "write", "F0",    [1, 0, 1, 0],  {"mode": "bit"}),
-    _t(
-        "3E QL F   Bit  Read  4pts",
-        "read",
-        "F0",
-        [4],
-        {"mode": "bit"},
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="exact",
-            responses=["d00000ffff0300040000000010"],
-            note="Validated F-device bit readback differs from the mock fixture on this target.",
-        ),
-    ),
+    _t("3E QL F   Bit  Read  4pts",          "read",  "F0",    [4],            {"mode": "bit"}),
     _t("3E QL V   Bit  Write [0,1,0,1]",    "write", "V0",    [0, 1, 0, 1],  {"mode": "bit"}),
     _t("3E QL V   Bit  Read  4pts",          "read",  "V0",    [4],            {"mode": "bit"}),
     _t("3E QL DX  Bit  Read  4pts",          "read",  "DX0",   [4],            {"mode": "bit"}),
@@ -157,19 +159,7 @@ TESTS = [
     _t("3E QL B   Bit Write [0,1,0,1]",     "write", "B0",    [0, 1, 0, 1],  {"mode": "bit"}),
     _t("3E QL B   Bit Read  4pts",           "read",  "B0",    [4],           {"mode": "bit"}),
     _t("3E QL SB  Bit Read  4pts",           "read",  "SB0",   [4],           {"mode": "bit"}),
-    _t(
-        "3E iQR SW  Bit Read  4pts",
-        "read",
-        "SW0",
-        [4],
-        {"series": "iqr", "mode": "bit"},
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0xC05C],
-            note="Direct SW bit access is rejected on the validated R120PCPU TCP path.",
-        ),
-    ),
+    _t("3E iQR SW  Bit Read  4pts",          "read",  "SW0",   [4],           {"series": "iqr", "mode": "bit"}),
 
     # ===== 3E QL DWord =====
     _t("3E QL D   DWord Write [100000,200000]", "write", "D200", [100000, 200000], {"mode": "dword"}),
@@ -228,12 +218,6 @@ TESTS = [
         "M400",
         [1, 0],
         {"target": "2,3,1023,0", "mode": "bit"},
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0x4A00],
-            note="The validated target rejects the NW2-ST3 routed bit path with end code 0x004A.",
-        ),
     ),
     _t(
         "Routing NW2-ST3 M  Bit Read  2pts",
@@ -241,12 +225,6 @@ TESTS = [
         "M400",
         [2],
         {"target": "2,3,1023,0", "mode": "bit"},
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0x4A00],
-            note="The validated target rejects the NW2-ST3 routed bit path with end code 0x004A.",
-        ),
     ),
 
     # ===== Random Access =====
@@ -268,12 +246,6 @@ TESTS = [
         "",
         [],
         {"word-blocks": "D800=10:20:30", "bit-blocks": "M500=1:0:1"},
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0xC056],
-            note="The validated R120PCPU target rejects the first mixed 1406 write; split fallback is required.",
-        ),
     ),
     _t(
         "3E QL Block Read  D800x3 / M500x3",
@@ -281,12 +253,6 @@ TESTS = [
         "",
         [],
         {"word-blocks": "D800=3", "bit-blocks": "M500=3"},
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="exact",
-            responses=["d00000ffff03000e000000000000000000000000000000"],
-            note="After the mixed block write is rejected, the validated R120PCPU target keeps the zeroed baseline state.",
-        ),
     ),
     _t("4E QL Block Write D850=5:6",
        "block-write", "", [], {"word-blocks": "D850=5:6", "frame": "4e"}),
@@ -297,18 +263,7 @@ TESTS = [
     _t("3E Remote RUN",         "remote-run",         "", []),
     _t("3E Remote STOP",        "remote-stop",        "", []),
     _t("3E Remote PAUSE",       "remote-pause",       "", []),
-    _t(
-        "3E Remote LATCH CLEAR",
-        "remote-latch-clear",
-        "",
-        [],
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0x4013],
-            note="Remote latch clear is target-dependent on the validated R120PCPU path.",
-        ),
-    ),
+    _t("3E Remote LATCH CLEAR", "remote-latch-clear", "", []),
     _t("4E Remote RUN",         "remote-run",         "", [], {"frame": "4e"}),
     _t("4E Remote STOP",        "remote-stop",        "", [], {"frame": "4e"}),
     _t("4E iQR Remote RUN",     "remote-run",         "", [], {"frame": "4e", "series": "iqr"}),
@@ -368,13 +323,6 @@ TESTS = [
         "LTS10,LTC11,LSTS20,LSTC21",
         [],
         {"series": "iqr"},
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="shape",
-            end_codes=[0x0000, 0x0000, 0x0000, 0x0000],
-            lengths=[8, 8, 8, 8],
-            note="Structured long-timer helper bits map differently on the validated target than in the generic mock fixture.",
-        ),
     ),
     _t(
         "3E iQR Poll Once   LTS/LTC/LSTS/LSTC",
@@ -382,13 +330,6 @@ TESTS = [
         "LTS10,LTC11,LSTS20,LSTC21",
         [],
         {"series": "iqr"},
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="shape",
-            end_codes=[0x0000, 0x0000, 0x0000, 0x0000],
-            lengths=[8, 8, 8, 8],
-            note="Structured long-timer helper bits map differently on the validated target than in the generic mock fixture.",
-        ),
     ),
 
     # ===== Memory Read/Write =====
@@ -410,128 +351,20 @@ TESTS = [
     # ===== Extended Address Extended Device (all 3 clients) =====
     _t("3E J1\\SW0  Ext Word Write [50,60]", "write-ext", "J1\\SW0",  [50, 60]),
     _t("3E J1\\SW0  Ext Word Read  2pts",    "read-ext",  "J1\\SW0",  [2]),
-    _t(
-        "3E J1\\SW0  Ext Bit Write [1,0,1]",
-        "write-ext",
-        "J1\\SW0",
-        [1, 0, 1],
-        {"mode": "bit"},
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0xC05C],
-            note="J-link SW bit access is rejected while the same path accepts word access on the validated target.",
-        ),
-    ),
-    _t(
-        "3E J1\\SW0  Ext Bit Read  3pts",
-        "read-ext",
-        "J1\\SW0",
-        [3],
-        {"mode": "bit"},
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0xC05C],
-            note="J-link SW bit access is rejected while the same path accepts word access on the validated target.",
-        ),
-    ),
+    _t("3E J1\\SW0  Ext Bit Write [1,0,1]",  "write-ext", "J1\\SW0",  [1, 0, 1], {"mode": "bit"}),
+    _t("3E J1\\SW0  Ext Bit Read  3pts",     "read-ext",  "J1\\SW0",  [3],       {"mode": "bit"}),
     _t("3E U3\\G100 Ext Word Write [11,22]",  "write-ext", "U3\\G100", [11, 22]),
-    _t(
-        "3E U3\\G100 Ext Word Read  2pts",
-        "read-ext",
-        "U3\\G100",
-        [2],
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="shape",
-            note="Validated buffer-memory content is target-state dependent even when the request shape is accepted.",
-        ),
-    ),
-    _t(
-        "3E U3\\G100 Ext Bit Write [1,0,1]",
-        "write-ext",
-        "U3\\G100",
-        [1, 0, 1],
-        {"mode": "bit"},
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0xC05C],
-            note="Validated U3\\G bit access is rejected on this target.",
-        ),
-    ),
-    _t(
-        "3E U3\\G100 Ext Bit Read  3pts",
-        "read-ext",
-        "U3\\G100",
-        [3],
-        {"mode": "bit"},
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0xC05C],
-            note="Validated U3\\G bit access is rejected on this target.",
-        ),
-    ),
-    _t(
-        "3E U1\\HG0  Ext Word Write [33,44]",
-        "write-ext",
-        "U1\\HG0",
-        [33, 44],
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0xC05B],
-            note="Direct HG access is rejected on the validated R120PCPU target.",
-        ),
-    ),
-    _t(
-        "3E U1\\HG0  Ext Word Read  2pts",
-        "read-ext",
-        "U1\\HG0",
-        [2],
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0xC05B],
-            note="Direct HG access is rejected on the validated R120PCPU target.",
-        ),
-    ),
+    _t("3E U3\\G100 Ext Word Read  2pts",     "read-ext",  "U3\\G100", [2]),
+    _t("3E U3\\G100 Ext Bit Write [1,0,1]",   "write-ext", "U3\\G100", [1, 0, 1], {"mode": "bit"}),
+    _t("3E U3\\G100 Ext Bit Read  3pts",      "read-ext",  "U3\\G100", [3],       {"mode": "bit"}),
+    _t("3E U1\\HG0  Ext Word Write [33,44]",  "write-ext", "U1\\HG0",  [33, 44]),
+    _t("3E U1\\HG0  Ext Word Read  2pts",     "read-ext",  "U1\\HG0",  [2]),
     _t("4E J1\\SW0  Ext Word Write [70,80]", "write-ext", "J1\\SW0",  [70, 80],   {"frame": "4e"}),
     _t("4E J1\\SW0  Ext Word Read  2pts",    "read-ext",  "J1\\SW0",  [2],         {"frame": "4e"}),
 
     # ===== Error / NG Conditions =====
-    _t(
-        "NG 3E Data Length Over 1001pts",
-        "read",
-        "D0",
-        [1001],
-        {},
-        CLIENTS,
-        True,
-        _live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0xC051],
-            note="This validated target returns 0xC051 for 1001-point oversize reads.",
-        ),
-    ),
-    _t(
-        "NG 4E Data Length Over 1001pts",
-        "read",
-        "D0",
-        [1001],
-        {"frame": "4e"},
-        CLIENTS,
-        True,
-        _live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0xC051],
-            note="This validated target returns 0xC051 for 1001-point oversize reads.",
-        ),
-    ),
+    _t("NG 3E Data Length Over 1001pts",      "read", "D0", [1001], {},           CLIENTS, True),
+    _t("NG 4E Data Length Over 1001pts",      "read", "D0", [1001], {"frame": "4e"}, CLIENTS, True),
 ]
 
 
