@@ -6,6 +6,7 @@ Checks:
   2. Request packet parity (all clients send identical bytes, except 4E serial)
   3. High-level named result parity for read/poll commands
 """
+import argparse
 import subprocess
 import json
 import math
@@ -21,6 +22,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
 ROOT = os.path.dirname(os.path.abspath(__file__)).replace("\\", "/")
 PREV_RESULTS_FILE = f"{ROOT}/logs/prev_results.json"
 LIVE_CASES_FILE = f"{ROOT}/logs/latest_live_cases.jsonl"
+EXPECTED_RESPONSES_FILE = f"{ROOT}/specs/expected_responses/live_profiles.json"
 
 
 def _resolve_dotnet_client():
@@ -40,6 +42,15 @@ CLIENTS = {
     "cpp":    _resolve_cpp_client(),
     "node-red": ["node", f"{ROOT}/clients/node/client_wrapper.js"],
 }
+CLIENT_ORDER = tuple(CLIENTS.keys())
+CLIENT_ALIASES = {
+    "python": "python",
+    "dotnet": "dotnet",
+    "cpp": "cpp",
+    "node": "node-red",
+    "node-red": "node-red",
+    "nodered": "node-red",
+}
 
 HOST = "127.0.0.1"
 PORT = 9000
@@ -56,25 +67,38 @@ CLIENTS_NO_CPP = {k: CLIENTS[k] for k in ("python", "dotnet", "node-red")}
 #   expect_error: if True, expect status="error" from all clients
 # ---------------------------------------------------------------------------
 def _t(name, cmd, addr, extra=None, flags=None, clients=None, expect_error=False, meta=None):
-    return (name, cmd, addr, extra or [], flags or {}, clients or CLIENTS, expect_error, meta or {})
+    return (
+        name,
+        cmd,
+        addr,
+        extra or [],
+        flags or {},
+        clients or CLIENTS,
+        expect_error,
+        merge_case_meta(name, meta or {}),
+    )
 
 
-R120_PROFILE = "r120pcpu_tcp1025"
+def load_expected_case_metadata(path=EXPECTED_RESPONSES_FILE):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception:
+        return {}
+
+    cases = payload.get("cases", {})
+    return cases if isinstance(cases, dict) else {}
 
 
-def _live_profile(profile, *, comparison_mode=None, responses=None, end_codes=None, lengths=None, note=None):
-    override = {}
-    if comparison_mode is not None:
-        override["comparison_mode"] = comparison_mode
-    if responses is not None:
-        override["responses"] = responses
-    if end_codes is not None:
-        override["end_codes"] = end_codes
-    if lengths is not None:
-        override["lengths"] = lengths
-    if note is not None:
-        override["note"] = note
-    return {"live_profiles": {profile: override}}
+EXPECTED_CASE_METADATA = load_expected_case_metadata()
+
+
+def merge_case_meta(name, inline_meta):
+    merged = dict(inline_meta or {})
+    file_meta = EXPECTED_CASE_METADATA.get(name)
+    if isinstance(file_meta, dict):
+        merged.update(file_meta)
+    return merged
 
 
 TESTS = [
@@ -114,19 +138,7 @@ TESTS = [
     _t("3E QL L   Bit  Write [1,0,1,0]",    "write", "L0",    [1, 0, 1, 0],  {"mode": "bit"}),
     _t("3E QL L   Bit  Read  4pts",          "read",  "L0",    [4],            {"mode": "bit"}),
     _t("3E QL F   Bit  Write [1,0,1,0]",    "write", "F0",    [1, 0, 1, 0],  {"mode": "bit"}),
-    _t(
-        "3E QL F   Bit  Read  4pts",
-        "read",
-        "F0",
-        [4],
-        {"mode": "bit"},
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="exact",
-            responses=["d00000ffff0300040000000010"],
-            note="Validated F-device bit readback differs from the mock fixture on this target.",
-        ),
-    ),
+    _t("3E QL F   Bit  Read  4pts",          "read",  "F0",    [4],            {"mode": "bit"}),
     _t("3E QL V   Bit  Write [0,1,0,1]",    "write", "V0",    [0, 1, 0, 1],  {"mode": "bit"}),
     _t("3E QL V   Bit  Read  4pts",          "read",  "V0",    [4],            {"mode": "bit"}),
     _t("3E QL DX  Bit  Read  4pts",          "read",  "DX0",   [4],            {"mode": "bit"}),
@@ -147,19 +159,7 @@ TESTS = [
     _t("3E QL B   Bit Write [0,1,0,1]",     "write", "B0",    [0, 1, 0, 1],  {"mode": "bit"}),
     _t("3E QL B   Bit Read  4pts",           "read",  "B0",    [4],           {"mode": "bit"}),
     _t("3E QL SB  Bit Read  4pts",           "read",  "SB0",   [4],           {"mode": "bit"}),
-    _t(
-        "3E iQR SW  Bit Read  4pts",
-        "read",
-        "SW0",
-        [4],
-        {"series": "iqr", "mode": "bit"},
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0xC05C],
-            note="Direct SW bit access is rejected on the validated R120PCPU TCP path.",
-        ),
-    ),
+    _t("3E iQR SW  Bit Read  4pts",          "read",  "SW0",   [4],           {"series": "iqr", "mode": "bit"}),
 
     # ===== 3E QL DWord =====
     _t("3E QL D   DWord Write [100000,200000]", "write", "D200", [100000, 200000], {"mode": "dword"}),
@@ -218,12 +218,6 @@ TESTS = [
         "M400",
         [1, 0],
         {"target": "2,3,1023,0", "mode": "bit"},
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0x4A00],
-            note="The validated target rejects the NW2-ST3 routed bit path with end code 0x004A.",
-        ),
     ),
     _t(
         "Routing NW2-ST3 M  Bit Read  2pts",
@@ -231,12 +225,6 @@ TESTS = [
         "M400",
         [2],
         {"target": "2,3,1023,0", "mode": "bit"},
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0x4A00],
-            note="The validated target rejects the NW2-ST3 routed bit path with end code 0x004A.",
-        ),
     ),
 
     # ===== Random Access =====
@@ -258,12 +246,6 @@ TESTS = [
         "",
         [],
         {"word-blocks": "D800=10:20:30", "bit-blocks": "M500=1:0:1"},
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0xC056],
-            note="The validated R120PCPU target rejects the first mixed 1406 write; split fallback is required.",
-        ),
     ),
     _t(
         "3E QL Block Read  D800x3 / M500x3",
@@ -271,12 +253,6 @@ TESTS = [
         "",
         [],
         {"word-blocks": "D800=3", "bit-blocks": "M500=3"},
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="exact",
-            responses=["d00000ffff03000e000000000000000000000000000000"],
-            note="After the mixed block write is rejected, the validated R120PCPU target keeps the zeroed baseline state.",
-        ),
     ),
     _t("4E QL Block Write D850=5:6",
        "block-write", "", [], {"word-blocks": "D850=5:6", "frame": "4e"}),
@@ -287,18 +263,7 @@ TESTS = [
     _t("3E Remote RUN",         "remote-run",         "", []),
     _t("3E Remote STOP",        "remote-stop",        "", []),
     _t("3E Remote PAUSE",       "remote-pause",       "", []),
-    _t(
-        "3E Remote LATCH CLEAR",
-        "remote-latch-clear",
-        "",
-        [],
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0x4013],
-            note="Remote latch clear is target-dependent on the validated R120PCPU path.",
-        ),
-    ),
+    _t("3E Remote LATCH CLEAR", "remote-latch-clear", "", []),
     _t("4E Remote RUN",         "remote-run",         "", [], {"frame": "4e"}),
     _t("4E Remote STOP",        "remote-stop",        "", [], {"frame": "4e"}),
     _t("4E iQR Remote RUN",     "remote-run",         "", [], {"frame": "4e", "series": "iqr"}),
@@ -358,13 +323,6 @@ TESTS = [
         "LTS10,LTC11,LSTS20,LSTC21",
         [],
         {"series": "iqr"},
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="shape",
-            end_codes=[0x0000, 0x0000, 0x0000, 0x0000],
-            lengths=[8, 8, 8, 8],
-            note="Structured long-timer helper bits map differently on the validated target than in the generic mock fixture.",
-        ),
     ),
     _t(
         "3E iQR Poll Once   LTS/LTC/LSTS/LSTC",
@@ -372,13 +330,6 @@ TESTS = [
         "LTS10,LTC11,LSTS20,LSTC21",
         [],
         {"series": "iqr"},
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="shape",
-            end_codes=[0x0000, 0x0000, 0x0000, 0x0000],
-            lengths=[8, 8, 8, 8],
-            note="Structured long-timer helper bits map differently on the validated target than in the generic mock fixture.",
-        ),
     ),
 
     # ===== Memory Read/Write =====
@@ -400,129 +351,116 @@ TESTS = [
     # ===== Extended Address Extended Device (all 3 clients) =====
     _t("3E J1\\SW0  Ext Word Write [50,60]", "write-ext", "J1\\SW0",  [50, 60]),
     _t("3E J1\\SW0  Ext Word Read  2pts",    "read-ext",  "J1\\SW0",  [2]),
-    _t(
-        "3E J1\\SW0  Ext Bit Write [1,0,1]",
-        "write-ext",
-        "J1\\SW0",
-        [1, 0, 1],
-        {"mode": "bit"},
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0xC05C],
-            note="J-link SW bit access is rejected while the same path accepts word access on the validated target.",
-        ),
-    ),
-    _t(
-        "3E J1\\SW0  Ext Bit Read  3pts",
-        "read-ext",
-        "J1\\SW0",
-        [3],
-        {"mode": "bit"},
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0xC05C],
-            note="J-link SW bit access is rejected while the same path accepts word access on the validated target.",
-        ),
-    ),
+    _t("3E J1\\SW0  Ext Bit Write [1,0,1]",  "write-ext", "J1\\SW0",  [1, 0, 1], {"mode": "bit"}),
+    _t("3E J1\\SW0  Ext Bit Read  3pts",     "read-ext",  "J1\\SW0",  [3],       {"mode": "bit"}),
     _t("3E U3\\G100 Ext Word Write [11,22]",  "write-ext", "U3\\G100", [11, 22]),
-    _t(
-        "3E U3\\G100 Ext Word Read  2pts",
-        "read-ext",
-        "U3\\G100",
-        [2],
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="shape",
-            note="Validated buffer-memory content is target-state dependent even when the request shape is accepted.",
-        ),
-    ),
-    _t(
-        "3E U3\\G100 Ext Bit Write [1,0,1]",
-        "write-ext",
-        "U3\\G100",
-        [1, 0, 1],
-        {"mode": "bit"},
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0xC05C],
-            note="Validated U3\\G bit access is rejected on this target.",
-        ),
-    ),
-    _t(
-        "3E U3\\G100 Ext Bit Read  3pts",
-        "read-ext",
-        "U3\\G100",
-        [3],
-        {"mode": "bit"},
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0xC05C],
-            note="Validated U3\\G bit access is rejected on this target.",
-        ),
-    ),
-    _t(
-        "3E U1\\HG0  Ext Word Write [33,44]",
-        "write-ext",
-        "U1\\HG0",
-        [33, 44],
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0xC05B],
-            note="Direct HG access is rejected on the validated R120PCPU target.",
-        ),
-    ),
-    _t(
-        "3E U1\\HG0  Ext Word Read  2pts",
-        "read-ext",
-        "U1\\HG0",
-        [2],
-        meta=_live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0xC05B],
-            note="Direct HG access is rejected on the validated R120PCPU target.",
-        ),
-    ),
+    _t("3E U3\\G100 Ext Word Read  2pts",     "read-ext",  "U3\\G100", [2]),
+    _t("3E U3\\G100 Ext Bit Write [1,0,1]",   "write-ext", "U3\\G100", [1, 0, 1], {"mode": "bit"}),
+    _t("3E U3\\G100 Ext Bit Read  3pts",      "read-ext",  "U3\\G100", [3],       {"mode": "bit"}),
+    _t("3E U1\\HG0  Ext Word Write [33,44]",  "write-ext", "U1\\HG0",  [33, 44]),
+    _t("3E U1\\HG0  Ext Word Read  2pts",     "read-ext",  "U1\\HG0",  [2]),
     _t("4E J1\\SW0  Ext Word Write [70,80]", "write-ext", "J1\\SW0",  [70, 80],   {"frame": "4e"}),
     _t("4E J1\\SW0  Ext Word Read  2pts",    "read-ext",  "J1\\SW0",  [2],         {"frame": "4e"}),
 
     # ===== Error / NG Conditions =====
-    _t(
-        "NG 3E Data Length Over 1001pts",
-        "read",
-        "D0",
-        [1001],
-        {},
-        CLIENTS,
-        True,
-        _live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0xC051],
-            note="This validated target returns 0xC051 for 1001-point oversize reads.",
-        ),
-    ),
-    _t(
-        "NG 4E Data Length Over 1001pts",
-        "read",
-        "D0",
-        [1001],
-        {"frame": "4e"},
-        CLIENTS,
-        True,
-        _live_profile(
-            R120_PROFILE,
-            comparison_mode="end_code",
-            end_codes=[0xC051],
-            note="This validated target returns 0xC051 for 1001-point oversize reads.",
-        ),
-    ),
+    _t("NG 3E Data Length Over 1001pts",      "read", "D0", [1001], {},           CLIENTS, True),
+    _t("NG 4E Data Length Over 1001pts",      "read", "D0", [1001], {"frame": "4e"}, CLIENTS, True),
 ]
+
+
+# ---------------------------------------------------------------------------
+# CLI helpers
+# ---------------------------------------------------------------------------
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run the SLMP verification harness in full parity mode or in a "
+            "filtered single-client debug mode."
+        )
+    )
+    parser.add_argument("--host", default=HOST, help=f"Mock server host (default: {HOST})")
+    parser.add_argument("--port", type=int, default=PORT, help=f"Mock server port (default: {PORT})")
+    parser.add_argument(
+        "--clients",
+        default="all",
+        help="Comma-separated clients to run: all, python, dotnet, cpp, node-red",
+    )
+    parser.add_argument(
+        "--case-pattern",
+        default="",
+        help="Case-insensitive substring filter for test names",
+    )
+    parser.add_argument(
+        "--list-cases",
+        action="store_true",
+        help="List selected cases and exit without starting the mock server",
+    )
+    parser.add_argument(
+        "--write-latest",
+        action="store_true",
+        help=(
+            "Allow filtered runs to overwrite latest_* artifacts. By default, "
+            "filtered runs write timestamped files only."
+        ),
+    )
+    return parser.parse_args()
+
+
+def parse_selected_clients(raw_value):
+    raw_value = (raw_value or "all").strip().lower()
+    if raw_value in {"", "all"}:
+        return list(CLIENT_ORDER)
+
+    selected = []
+    seen = set()
+    for item in raw_value.split(","):
+        key = CLIENT_ALIASES.get(item.strip().lower())
+        if key is None:
+            valid = ", ".join(CLIENT_ORDER)
+            raise SystemExit(f"unknown client '{item.strip()}'; valid values: {valid}, all")
+        if key not in seen:
+            selected.append(key)
+            seen.add(key)
+    return selected
+
+
+def case_matches_pattern(name, pattern):
+    return not pattern or pattern.lower() in name.lower()
+
+
+def list_selected_cases(selected_clients, case_pattern):
+    print("Selected cases:")
+    matched = 0
+    runnable = 0
+    for test in TESTS:
+        name, cmd, addr, extra, flags, clients, expect_error, _meta = test
+        if not case_matches_pattern(name, case_pattern):
+            continue
+        matched += 1
+        resolved = resolve_clients(cmd, addr, extra, flags, clients, selected_clients)
+        scope = ",".join(resolved.keys()) if resolved else "skip(out-of-scope)"
+        if resolved:
+            runnable += 1
+        print(f"- [{scope}] {name}")
+    print(f"\nTotal matched cases: {matched}")
+    print(f"Runnable cases: {runnable}")
+
+
+def should_write_latest(selected_clients, case_pattern, force_write_latest):
+    return force_write_latest or (selected_clients == list(CLIENT_ORDER) and not case_pattern)
+
+
+def count_selected_cases(selected_clients, case_pattern):
+    matched = 0
+    runnable = 0
+    for test in TESTS:
+        name, cmd, addr, extra, flags, clients, expect_error, _meta = test
+        if not case_matches_pattern(name, case_pattern):
+            continue
+        matched += 1
+        if resolve_clients(cmd, addr, extra, flags, clients, selected_clients):
+            runnable += 1
+    return matched, runnable
 
 
 # ---------------------------------------------------------------------------
@@ -646,12 +584,14 @@ def node_red_supports(command, _address, _extra, _flags):
     }
 
 
-def resolve_clients(command, address, extra, flags, clients):
+def resolve_clients(command, address, extra, flags, clients, selected_clients=None):
     resolved = dict(clients)
     if node_red_supports(command, address, extra, flags):
         resolved["node-red"] = CLIENTS["node-red"]
     else:
         resolved.pop("node-red", None)
+    if selected_clients is not None:
+        resolved = {name: resolved[name] for name in selected_clients if name in resolved}
     return resolved
 
 
@@ -852,9 +792,9 @@ def determine_live_replay_class(command, address, flags, expect_error):
     return "stateful"
 
 
-def write_live_case(case_payload):
+def write_live_case(path, case_payload):
     try:
-        with open(LIVE_CASES_FILE, "a", encoding="utf-8") as handle:
+        with open(path, "a", encoding="utf-8") as handle:
             handle.write(json.dumps(case_payload, ensure_ascii=False) + "\n")
     except Exception:
         pass
@@ -863,10 +803,28 @@ def write_live_case(case_payload):
 # ---------------------------------------------------------------------------
 # Main test runner
 # ---------------------------------------------------------------------------
-def test_case(name, command, address, extra, flags, clients, expect_error, meta, packets_json, log_fp, prev_result=None):
-    clients = resolve_clients(command, address, extra, flags, clients)
+def test_case(
+    name,
+    command,
+    address,
+    extra,
+    flags,
+    clients,
+    expect_error,
+    meta,
+    packets_json,
+    markers_json,
+    live_cases_file,
+    log_fp,
+    prev_result=None,
+    selected_clients=None,
+):
+    clients = resolve_clients(command, address, extra, flags, clients, selected_clients)
     prev_tag = f"  [Prev:{prev_result}]" if prev_result else ""
     log_print(f"Running: {name}{prev_tag}", log_fp)
+    if not clients:
+        log_print("  SKIP (no selected clients in scope)", log_fp)
+        return "skip"
     desc = generate_desc(command, address, extra, flags, clients, expect_error)
     log_print(f"  {desc}", log_fp)
 
@@ -941,7 +899,6 @@ def test_case(name, command, address, extra, flags, clients, expect_error, meta,
         "type": "TEST_RESULT", "name": name, "result": result_str,
         "desc": desc, "n_clients": len(clients),
     }, ensure_ascii=False)
-    markers_json = packets_json.replace("latest_packets.jsonl", "latest_markers.jsonl")
     try:
         with open(markers_json, "a", encoding="utf-8") as mf:
             mf.write(marker + "\n")
@@ -980,26 +937,50 @@ def test_case(name, command, address, extra, flags, clients, expect_error, meta,
         live_case["baseline_response_data_lengths"] = live_case["clients"][baseline_client]["response_data_lengths"]
     if meta.get("live_profiles"):
         live_case["live_profiles"] = meta["live_profiles"]
-    write_live_case(live_case)
+    write_live_case(live_cases_file, live_case)
 
     if all_ok:
         status_tag = "OK (NG)" if expect_error else "OK"
         log_print(f"  {status_tag}", log_fp)
-    return all_ok
+        return "pass"
+    return "fail"
 
 
 def main():
+    args = parse_args()
+    selected_clients = parse_selected_clients(args.clients)
+    if args.list_cases:
+        list_selected_cases(selected_clients, args.case_pattern)
+        return
+
+    global HOST, PORT
+    HOST = args.host
+    PORT = args.port
+
     logs_dir = f"{ROOT}/logs"
     os.makedirs(logs_dir, exist_ok=True)
-    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = f"{logs_dir}/packet_log_{ts}.log"
-    packets_json = f"{logs_dir}/latest_packets.jsonl"
+    update_latest = should_write_latest(selected_clients, args.case_pattern, args.write_latest)
+    selected_test_count, runnable_test_count = count_selected_cases(selected_clients, args.case_pattern)
+    if selected_test_count == 0:
+        print("No cases matched the current filter.")
+        return
+    if runnable_test_count == 0:
+        print("Matched cases exist, but none are in scope for the selected clients.")
+        return
+    if update_latest:
+        packets_json = f"{logs_dir}/latest_packets.jsonl"
+        markers_json = f"{logs_dir}/latest_markers.jsonl"
+        live_cases_file = LIVE_CASES_FILE
+    else:
+        packets_json = f"{logs_dir}/packets_{ts}.jsonl"
+        markers_json = f"{logs_dir}/markers_{ts}.jsonl"
+        live_cases_file = f"{logs_dir}/live_cases_{ts}.jsonl"
 
-    markers_json = f"{logs_dir}/latest_markers.jsonl"
-    # Clear both logs so line counting and marker pairing are fresh
     open(packets_json, "w").close()
     open(markers_json, "w").close()
-    open(LIVE_CASES_FILE, "w").close()
+    open(live_cases_file, "w").close()
 
     server_log_path = f"{logs_dir}/server_{ts}.log"
     server_log_fp = open(server_log_path, "w", encoding="utf-8")
@@ -1011,20 +992,50 @@ def main():
 
     passed = 0
     failed = 0
+    skipped = 0
     fail_names = []
     prev_results = load_prev_results()
     current_results = {}
+    mode = "single-client" if len(selected_clients) == 1 else "parity"
 
     with open(log_path, "w", encoding="utf-8") as log_fp:
         log_fp.write(f"Verification run: {datetime.now().isoformat()}\n\n")
         try:
-            log_print(f"Starting comprehensive verification ({len(TESTS)} tests)...\n", log_fp)
+            log_print(
+                (
+                    f"Starting {mode} verification "
+                    f"(matched={selected_test_count}, runnable={runnable_test_count}, "
+                    f"clients={','.join(selected_clients)}, "
+                    f"write_latest={'yes' if update_latest else 'no'})...\n"
+                ),
+                log_fp,
+            )
 
             for t in TESTS:
                 name, cmd, addr, extra, flags, clients, expect_error, meta = t
+                if not case_matches_pattern(name, args.case_pattern):
+                    continue
                 prev = prev_results.get(name)
-                ok = test_case(name, cmd, addr, extra, flags, clients, expect_error, meta, packets_json, log_fp, prev_result=prev)
-                if ok:
+                result = test_case(
+                    name,
+                    cmd,
+                    addr,
+                    extra,
+                    flags,
+                    clients,
+                    expect_error,
+                    meta,
+                    packets_json,
+                    markers_json,
+                    live_cases_file,
+                    log_fp,
+                    prev_result=prev,
+                    selected_clients=selected_clients,
+                )
+                if result == "skip":
+                    skipped += 1
+                    continue
+                if result == "pass":
                     passed += 1
                     current_results[name] = "OK(NG)" if expect_error else "OK"
                 else:
@@ -1037,16 +1048,26 @@ def main():
                 log_print(f"\nFAILED ({failed}):", log_fp)
                 for fn in fail_names:
                     log_print(f"  - {fn}", log_fp)
-            summary = f"\n{'ALL PASSED' if failed == 0 else 'SOME FAILED'}: {passed}/{passed+failed}"
+            executed = passed + failed
+            summary = (
+                f"\n{'ALL PASSED' if failed == 0 else 'SOME FAILED'}: "
+                f"passed={passed} failed={failed} skipped={skipped} executed={executed}"
+            )
             log_print(summary, log_fp)
+            if not update_latest:
+                log_print("Filtered run: latest_* artifacts and prev_results.json were left unchanged.", log_fp)
 
         finally:
             server_proc.terminate()
             server_proc.wait()
             server_log_fp.close()
-            save_results(current_results)
+            if update_latest:
+                save_results(current_results)
 
     print(f"\nLog: {log_path}")
+    print(f"Packets JSON: {packets_json}")
+    print(f"Markers JSON: {markers_json}")
+    print(f"Live cases JSONL: {live_cases_file}")
 
 
 if __name__ == "__main__":

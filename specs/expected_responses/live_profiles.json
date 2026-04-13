@@ -1,0 +1,217 @@
+{
+  "cases": {
+    "3E QL F   Bit  Read  4pts": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "exact",
+          "responses": [
+            "d00000ffff0300040000000010"
+          ],
+          "note": "Validated F-device bit readback differs from the mock fixture on this target."
+        }
+      }
+    },
+    "3E iQR SW  Bit Read  4pts": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "end_code",
+          "end_codes": [
+            49244
+          ],
+          "note": "Direct SW bit access is rejected on the validated R120PCPU TCP path."
+        }
+      }
+    },
+    "Routing NW2-ST3 M  Bit Write [1,0]": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "end_code",
+          "end_codes": [
+            18944
+          ],
+          "note": "The validated target rejects the NW2-ST3 routed bit path with end code 0x004A."
+        }
+      }
+    },
+    "Routing NW2-ST3 M  Bit Read  2pts": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "end_code",
+          "end_codes": [
+            18944
+          ],
+          "note": "The validated target rejects the NW2-ST3 routed bit path with end code 0x004A."
+        }
+      }
+    },
+    "3E QL Block Write D800=10:20:30 / M500=1:0:1": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "end_code",
+          "end_codes": [
+            49238
+          ],
+          "note": "The validated R120PCPU target rejects the first mixed 1406 write; split fallback is required."
+        }
+      }
+    },
+    "3E QL Block Read  D800x3 / M500x3": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "exact",
+          "responses": [
+            "d00000ffff03000e000000000000000000000000000000"
+          ],
+          "note": "After the mixed block write is rejected, the validated R120PCPU target keeps the zeroed baseline state."
+        }
+      }
+    },
+    "3E Remote LATCH CLEAR": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "end_code",
+          "end_codes": [
+            16403
+          ],
+          "note": "Remote latch clear is target-dependent on the validated R120PCPU path."
+        }
+      }
+    },
+    "3E iQR Named Read  LTS/LTC/LSTS/LSTC": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "shape",
+          "end_codes": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "lengths": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "note": "Structured long-timer helper bits map differently on the validated target than in the generic mock fixture."
+        }
+      }
+    },
+    "3E iQR Poll Once   LTS/LTC/LSTS/LSTC": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "shape",
+          "end_codes": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "lengths": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "note": "Structured long-timer helper bits map differently on the validated target than in the generic mock fixture."
+        }
+      }
+    },
+    "3E J1\\SW0  Ext Bit Write [1,0,1]": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "end_code",
+          "end_codes": [
+            49244
+          ],
+          "note": "J-link SW bit access is rejected while the same path accepts word access on the validated target."
+        }
+      }
+    },
+    "3E J1\\SW0  Ext Bit Read  3pts": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "end_code",
+          "end_codes": [
+            49244
+          ],
+          "note": "J-link SW bit access is rejected while the same path accepts word access on the validated target."
+        }
+      }
+    },
+    "3E U3\\G100 Ext Word Read  2pts": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "shape",
+          "note": "Validated buffer-memory content is target-state dependent even when the request shape is accepted."
+        }
+      }
+    },
+    "3E U3\\G100 Ext Bit Write [1,0,1]": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "end_code",
+          "end_codes": [
+            49244
+          ],
+          "note": "Validated U3\\G bit access is rejected on this target."
+        }
+      }
+    },
+    "3E U3\\G100 Ext Bit Read  3pts": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "end_code",
+          "end_codes": [
+            49244
+          ],
+          "note": "Validated U3\\G bit access is rejected on this target."
+        }
+      }
+    },
+    "3E U1\\HG0  Ext Word Write [33,44]": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "end_code",
+          "end_codes": [
+            49243
+          ],
+          "note": "Direct HG access is rejected on the validated R120PCPU target."
+        }
+      }
+    },
+    "3E U1\\HG0  Ext Word Read  2pts": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "end_code",
+          "end_codes": [
+            49243
+          ],
+          "note": "Direct HG access is rejected on the validated R120PCPU target."
+        }
+      }
+    },
+    "NG 3E Data Length Over 1001pts": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "end_code",
+          "end_codes": [
+            49233
+          ],
+          "note": "This validated target returns 0xC051 for 1001-point oversize reads."
+        }
+      }
+    },
+    "NG 4E Data Length Over 1001pts": {
+      "live_profiles": {
+        "r120pcpu_tcp1025": {
+          "comparison_mode": "end_code",
+          "end_codes": [
+            49233
+          ],
+          "note": "This validated target returns 0xC051 for 1001-point oversize reads."
+        }
+      }
+    }
+  }
+}
