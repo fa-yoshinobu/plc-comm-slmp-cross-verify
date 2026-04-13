@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-04-13
+
+### Added
+- `device_command_consistency.py`: added a live multi-command consistency runner that exercises the same PLC address through multiple supported command paths across Python, .NET, C++, Node-RED, and Rust.
+- `specs/device_consistency/r120pcpu_tcp1025.json`: added a checked-in live device-matrix profile covering supported paths, volatile devices, and restore policy for the validated R120 target.
+- `specs/shared/unsupported_path_vectors.json`: added a checked-in shared spec for intentionally blocked paths such as long timer direct reads and `LCS/LCC` random/block/monitor commands.
+- `.github/workflows/live-device-consistency.yml`: added a manual self-hosted GitHub Actions workflow for the live device consistency sweep.
+- `validate_specs.py`: added a fast schema validator for device-consistency profiles, unsupported-path vectors, and live profile overrides.
+
+### Changed
+- `verify.py` now loads unsupported-path negative cases from checked-in JSON instead of hardcoding them in the test list.
+- The Node verification wrapper now supports `read-ext` and `write-ext` for link-direct and buffer-memory extended devices and uses the correct `Jn\\...` subcommands.
+- The .NET verification wrapper now handles larger dword values safely during consistency and random-write runs.
+- The live consistency runner now writes richer reports with client summary, kind summary, restore summary, failure classes, and the effective device matrix.
+- The manual live workflows now publish their markdown reports to the GitHub Actions job summary.
+- `README.md` now documents the tool layering, quick-start commands, guarded paths, and the intended use of the mock parity suite versus live replay versus device consistency.
+
+### Validated
+- Mock parity suite now passes at `228/228`.
+- Live PLC profile verification against `192.168.250.100:1025` now passes at `228/228`.
+- Live device consistency across all five client implementations now passes at `225/225`.
+
 ## [0.1.5] - 2026-04-13
 
 ### Changed
