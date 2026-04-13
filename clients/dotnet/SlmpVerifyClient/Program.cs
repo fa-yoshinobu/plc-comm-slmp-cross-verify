@@ -136,6 +136,13 @@ namespace SlmpVerifyClient
                     await client.WriteRandomBitsAsync(bItems);
                     result = new { status = "success" };
                 }
+                else if (command == "monitor-register")
+                {
+                    var wDevs = wordDevs.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(SlmpDeviceParser.Parse).ToArray();
+                    var dwDevs = dwordDevs.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(SlmpDeviceParser.Parse).ToArray();
+                    await client.RegisterMonitorDevicesAsync(wDevs, dwDevs);
+                    result = new { status = "success" };
+                }
 
                 // --- Block access ---
                 else if (command == "block-read")
@@ -352,4 +359,3 @@ namespace SlmpVerifyClient
                 or SlmpDeviceCode.DY;
     }
 }
-

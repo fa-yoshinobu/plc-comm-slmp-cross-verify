@@ -269,6 +269,15 @@ async function main() {
         bitValues: parseKvPairs(args.bits).map(([device, value]) => [device, Boolean(value)]),
       });
       result = { status: "success" };
+    } else if (args.command === "monitor-register") {
+      const wordDevices = args.wordDevs ? args.wordDevs.split(",").map((item) => item.trim()).filter(Boolean) : [];
+      const dwordDevices = args.dwordDevs ? args.dwordDevs.split(",").map((item) => item.trim()).filter(Boolean) : [];
+      const parts = [Buffer.from([wordDevices.length, dwordDevices.length])];
+      wordDevices.forEach((device) => parts.push(slmp.encodeDeviceSpec(device, { series: args.series })));
+      dwordDevices.forEach((device) => parts.push(slmp.encodeDeviceSpec(device, { series: args.series })));
+      const subcommand = args.series === "iqr" ? 0x0002 : 0x0000;
+      await client.request(slmp.Command.MONITOR_REGISTER, subcommand, Buffer.concat(parts), { series: args.series });
+      result = { status: "success" };
     } else if (args.command === "block-read") {
       const wordBlocks = parseDevCountPairs(args.wordBlocks);
       const bitBlocks = parseDevCountPairs(args.bitBlocks);

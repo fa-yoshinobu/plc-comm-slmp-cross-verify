@@ -74,6 +74,7 @@ def main():
         "read-named", "write-named", "poll-once",
         "remote-run", "remote-stop", "remote-pause", "remote-latch-clear", "remote-reset",
         "random-read", "random-write-words", "random-write-bits",
+        "monitor-register",
         "block-read", "block-write",
         "self-test",
         "memory-read", "memory-write",
@@ -198,6 +199,12 @@ def main():
                 client.write_random_bits(bit_values=bit_items)
                 result = {"status": "success"}
 
+            elif cmd == "monitor-register":
+                word_devs = [d.strip() for d in args.word_devs.split(",") if d.strip()] if args.word_devs else []
+                dword_devs = [d.strip() for d in args.dword_devs.split(",") if d.strip()] if args.dword_devs else []
+                client.register_monitor_devices(word_devices=word_devs, dword_devices=dword_devs)
+                result = {"status": "success"}
+
             # --- Block access ---
             elif cmd == "block-read":
                 word_blocks = _parse_dev_count_pairs(args.word_blocks) if args.word_blocks else []
@@ -281,4 +288,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

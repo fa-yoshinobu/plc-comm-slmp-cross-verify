@@ -10,6 +10,7 @@ import argparse
 import subprocess
 import json
 import math
+import random
 import time
 import os
 import sys
@@ -112,6 +113,126 @@ def merge_case_meta(name, inline_meta):
     if isinstance(file_meta, dict):
         merged.update(file_meta)
     return merged
+
+
+WALK_FLAGS_4E_IQR = {"frame": "4e", "series": "iqr"}
+
+
+def _named_updates(assignments):
+    return ",".join(f"{address}={value}" for address, value in assignments)
+
+
+def _seeded_assignments(addresses, seed, low, high):
+    rng = random.Random(seed)
+    return [(address, rng.randint(low, high)) for address in addresses]
+
+
+def _build_named_toggle_cases(prefix, addresses, flags):
+    read_target = ",".join(addresses)
+    updates_on = _named_updates((address, 1) for address in addresses)
+    updates_off = _named_updates((address, 0) for address in addresses)
+    return [
+        _t(f"{prefix} Write ON #1", "write-named", updates_on, [], flags),
+        _t(f"{prefix} Read  ON #1", "read-named", read_target, [], flags),
+        _t(f"{prefix} Write OFF #1", "write-named", updates_off, [], flags),
+        _t(f"{prefix} Read  OFF #1", "read-named", read_target, [], flags),
+        _t(f"{prefix} Write ON #2", "write-named", updates_on, [], flags),
+        _t(f"{prefix} Read  ON #2", "read-named", read_target, [], flags),
+        _t(f"{prefix} Write OFF #2", "write-named", updates_off, [], flags),
+        _t(f"{prefix} Read  OFF #2", "read-named", read_target, [], flags),
+    ]
+
+
+def _build_named_dual_write_cases(prefix, addresses, flags, seed, low, high):
+    read_target = ",".join(addresses)
+    updates_a = _named_updates(_seeded_assignments(addresses, seed, low, high))
+    updates_b = _named_updates(_seeded_assignments(addresses, seed + 1, low, high))
+    return [
+        _t(f"{prefix} Write SET A", "write-named", updates_a, [], flags),
+        _t(f"{prefix} Read  SET A", "read-named", read_target, [], flags),
+        _t(f"{prefix} Write SET B", "write-named", updates_b, [], flags),
+        _t(f"{prefix} Read  SET B", "read-named", read_target, [], flags),
+    ]
+
+
+def _build_ext_bit_toggle_cases(devices, flags):
+    cases = []
+    sequence = [("ON #1", 1), ("OFF #1", 0), ("ON #2", 1), ("OFF #2", 0)]
+    for device in devices:
+        ext_flags = dict(flags, mode="bit")
+        for label, value in sequence:
+            cases.append(_t(f"4E iQR Walk {device} Ext Bit Write {label}", "write-ext", device, [value], ext_flags))
+            cases.append(_t(f"4E iQR Walk {device} Ext Bit Read  {label}", "read-ext", device, [1], ext_flags))
+    return cases
+
+
+def _build_ext_word_dual_write_cases(devices, flags, seed, low, high):
+    cases = []
+    writes_a = dict(_seeded_assignments(devices, seed, low, high))
+    writes_b = dict(_seeded_assignments(devices, seed + 1, low, high))
+    for device in devices:
+        cases.append(_t(f"4E iQR Walk {device} Ext Word Write SET A", "write-ext", device, [writes_a[device]], flags))
+        cases.append(_t(f"4E iQR Walk {device} Ext Word Read  SET A", "read-ext", device, [1], flags))
+        cases.append(_t(f"4E iQR Walk {device} Ext Word Write SET B", "write-ext", device, [writes_b[device]], flags))
+        cases.append(_t(f"4E iQR Walk {device} Ext Word Read  SET B", "read-ext", device, [1], flags))
+    return cases
+
+
+def build_automated_device_walk_cases():
+    common_bits = [
+        "STS10", "STC10", "TS10", "TC10", "CS10", "CC10", "SB10", "DX10", "DY10",
+        "X10", "Y10", "M10", "L10", "F100", "V10", "B10", "SM10",
+    ]
+    common_words = [
+        "STN10", "TN10", "CN10", "SW10", "ZR10", "D10", "W10", "Z10", "R10", "SD10", "RD10",
+    ]
+    long_bits = ["LTS10", "LTC10", "LSTS10", "LSTC10"]
+    long_counter_bits = ["LCS10", "LCC10"]
+    long_dwords = ["LTN10:D", "LSTN10:D", "LCN10:D", "LZ0:D", "LZ1:D"]
+    ext_bits = [r"J1\X10", r"J1\Y10", r"J1\B10", r"J1\SB10"]
+    ext_words = [r"J1\W10", r"J1\SW10"]
+
+    cases = []
+    cases.extend(_build_named_toggle_cases(
+        "4E iQR Walk Bits STS10/STC10/TS10/TC10/CS10/CC10/SB10/DX10/DY10/X10/Y10/M10/L10/F100/V10/B10/SM10",
+        common_bits,
+        WALK_FLAGS_4E_IQR,
+    ))
+    cases.extend(_build_named_dual_write_cases(
+        "4E iQR Walk Words STN10/TN10/CN10/SW10/ZR10/D10/W10/Z10/R10/SD10/RD10",
+        common_words,
+        WALK_FLAGS_4E_IQR,
+        2026041301,
+        1000,
+        65000,
+    ))
+    cases.extend(_build_named_toggle_cases(
+        "4E iQR Walk LongBits LTS10/LTC10/LSTS10/LSTC10",
+        long_bits,
+        WALK_FLAGS_4E_IQR,
+    ))
+    cases.extend(_build_named_toggle_cases(
+        "4E iQR Walk LongCounterBits LCS10/LCC10",
+        long_counter_bits,
+        WALK_FLAGS_4E_IQR,
+    ))
+    cases.extend(_build_named_dual_write_cases(
+        "4E iQR Walk LongDWords LTN10/LSTN10/LCN10/LZ0/LZ1",
+        long_dwords,
+        WALK_FLAGS_4E_IQR,
+        2026041302,
+        100000,
+        2_000_000_000,
+    ))
+    cases.extend(_build_ext_bit_toggle_cases(ext_bits, WALK_FLAGS_4E_IQR))
+    cases.extend(_build_ext_word_dual_write_cases(
+        ext_words,
+        WALK_FLAGS_4E_IQR,
+        2026041303,
+        1000,
+        65000,
+    ))
+    return cases
 
 
 TESTS = [
@@ -376,9 +497,19 @@ TESTS = [
     _t("4E J1\\SW0  Ext Word Read  2pts",    "read-ext",  "J1\\SW0",  [2],         {"frame": "4e"}),
 
     # ===== Error / NG Conditions =====
+    _t("NG 4E iQR Guard LTC Direct Bit Read", "read", "LTC10", [1], {"frame": "4e", "series": "iqr", "mode": "bit"}, CLIENTS, True),
+    _t("NG 4E iQR Guard LSTC Direct Bit Read", "read", "LSTC10", [1], {"frame": "4e", "series": "iqr", "mode": "bit"}, CLIENTS, True),
+    _t("NG 4E iQR Guard LTN Direct Word Read 2pts", "read", "LTN10", [2], {"frame": "4e", "series": "iqr"}, CLIENTS, True),
+    _t("NG 4E iQR Guard LSTN Direct DWord Read", "read", "LSTN10", [1], {"frame": "4e", "series": "iqr", "mode": "dword"}, CLIENTS, True),
+    _t("NG 4E iQR Guard LCS Random Read", "random-read", "", [], {"frame": "4e", "series": "iqr", "word-devs": "LCS10"}, CLIENTS, True),
+    _t("NG 4E iQR Guard LCS Block Read", "block-read", "", [], {"frame": "4e", "series": "iqr", "bit-blocks": "LCS10=1"}, CLIENTS, True),
+    _t("NG 4E iQR Guard LCC Block Write", "block-write", "", [], {"frame": "4e", "series": "iqr", "bit-blocks": "LCC10=1"}, CLIENTS, True),
+    _t("NG 4E iQR Guard LCS Monitor Register", "monitor-register", "", [], {"frame": "4e", "series": "iqr", "word-devs": "LCS10"}, CLIENTS, True),
     _t("NG 3E Data Length Over 1001pts",      "read", "D0", [1001], {},           CLIENTS, True),
     _t("NG 4E Data Length Over 1001pts",      "read", "D0", [1001], {"frame": "4e"}, CLIENTS, True),
 ]
+
+TESTS.extend(build_automated_device_walk_cases())
 
 
 # ---------------------------------------------------------------------------
@@ -589,6 +720,7 @@ def node_red_supports(command, _address, _extra, _flags):
         "random-read",
         "random-write-words",
         "random-write-bits",
+        "monitor-register",
         "block-read",
         "block-write",
         "read-named",
