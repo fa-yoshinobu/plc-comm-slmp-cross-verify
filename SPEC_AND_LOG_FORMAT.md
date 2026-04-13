@@ -1,4 +1,12 @@
-# SLMP Verification Specs and Log Files
+# SLMP Verification Specs And Log Formats
+
+## Purpose
+
+This file describes the machine-readable artifacts produced and consumed by the
+cross-verify harness.
+
+Use `README.md` for workflow and command examples. Use this file only for
+artifact semantics.
 
 ## Mock Server Scope
 
@@ -25,40 +33,66 @@ Supported subcommands include:
 
 ## Intentional Error Injection
 
-The mock server deliberately returns common SLMP errors for a few stable cases:
+The mock server deliberately returns stable SLMP errors for selected negative
+cases:
 
 - `0xC050` for out-of-range addresses such as `999999`
 - `0xC056` for oversized reads above the suite limit
 - `0xC051` for intentionally invalid device-code payloads
 
-These cases are used to confirm consistent error propagation across languages.
+## Artifact Policy
 
-## Generated Log Files
+### Full baseline run
 
-`verify.py` writes several files under `logs/`:
+`python verify.py` refreshes the canonical artifacts:
+
+- `logs/latest_packets.jsonl`
+- `logs/latest_markers.jsonl`
+- `logs/latest_live_cases.jsonl`
+- `logs/prev_results.json`
+
+### Filtered or single-client run
+
+`python verify.py --clients ...` or `python verify.py --case-pattern ...`
+writes timestamped artifacts instead:
+
+- `logs/packets_<timestamp>.jsonl`
+- `logs/markers_<timestamp>.jsonl`
+- `logs/live_cases_<timestamp>.jsonl`
+
+This avoids overwriting the canonical baseline unless `--write-latest` is used.
+
+## Generated Files
+
+`verify.py` writes:
 
 - `packet_log_YYYYMMDD_HHMMSS.log`
   Human-readable console transcript for one run.
-- `latest_packets.jsonl`
-  Raw REQ/RES packets streamed from the mock server.
-- `latest_markers.jsonl`
-  One marker per test case, written by `verify.py`.
+- `latest_packets.jsonl` or `packets_<timestamp>.jsonl`
+  Raw mock-server REQ/RES packet stream for that run.
+- `latest_markers.jsonl` or `markers_<timestamp>.jsonl`
+  One executed test marker per run.
 - `prev_results.json`
-  Previous normalized test outcomes used for regression comparison.
+  Previous canonical full-suite results used for regression comparison.
+- `latest_live_cases.jsonl` or `live_cases_<timestamp>.jsonl`
+  Replayable case records for `slmp_live_verify.py`.
+
+`slmp_interactive_sender.py` writes:
+
 - `response_history.json`
-  Interactive replay history used by `slmp_interactive_sender.py`.
-- `latest_live_cases.jsonl`
-  Per-test replay traces and expected mock responses for `slmp_live_verify.py`.
+  Normalized replay-history store for manual PLC sends.
+
+`slmp_live_verify.py` writes:
+
 - `latest_live_verify.json`
-  Latest automated live-replay report.
 - `latest_live_verify.md`
-  Markdown summary of the latest automated live-replay report.
 
 ## JSONL Entry Shapes
 
-### `latest_packets.jsonl`
+### Packet stream
 
-Each line is one mock-server packet event:
+Each line of `latest_packets.jsonl` or `packets_<timestamp>.jsonl` is one
+mock-server packet event:
 
 ```json
 {
@@ -69,26 +103,32 @@ Each line is one mock-server packet event:
 }
 ```
 
-### `latest_markers.jsonl`
+### Test markers
 
-Each line is one per-test result marker:
+Each line of `latest_markers.jsonl` or `markers_<timestamp>.jsonl` is one
+executed test marker:
 
 ```json
 {
   "type": "TEST_RESULT",
   "name": "3E QL D Word Read 3pts",
-  "result": "pass",
-  "desc": "read D100 3pts",
-  "n_clients": 3
+  "result": "OK",
+  "desc": "D100 -> 3pts Word  [3E/QL 4client]",
+  "n_clients": 4
 }
 ```
 
-`slmp_interactive_sender.py` uses `n_clients` to group the corresponding REQ
-packets from `latest_packets.jsonl`.
+Notes:
 
-### `latest_live_cases.jsonl`
+- `result` is `OK`, `OK(NG)`, or `NG`
+- filtered-out or out-of-scope cases are not emitted
+- `n_clients` is used by `slmp_interactive_sender.py` to regroup saved REQ
+  packets
 
-Each line stores one replayable verification case:
+### Live cases
+
+Each line of `latest_live_cases.jsonl` or `live_cases_<timestamp>.jsonl`
+contains one replayable verification case:
 
 ```json
 {
@@ -115,31 +155,22 @@ Each line stores one replayable verification case:
 }
 ```
 
-`slmp_live_verify.py` uses this file to replay the suite against a real PLC
-and compare the normalized responses with the latest mock-run expectations.
-When `live_profiles` is present, `--profile <name>` can override the baseline
-comparison mode or expected responses for a validated PLC profile without
-changing the mock parity baseline.
+`slmp_live_verify.py` replays these requests against a real PLC and compares
+the normalized responses with either:
 
-## Interactive Replay Tool
+- the baseline mock expectations
+- a profile override such as `r120pcpu_tcp1025`
 
-`slmp_interactive_sender.py`:
+## Replay Tools
 
-- loads `latest_packets.jsonl` and `latest_markers.jsonl`
-- groups request packets by test case
-- sends one selected request or a full batch to a real PLC
-- normalizes 4E response serial bytes before history comparison
-- reports response changes against `response_history.json`
+### `slmp_interactive_sender.py`
 
-## Automated Live Verification
+- loads replayable requests from `latest_live_cases.jsonl` first
+- falls back to packet + marker pairing if needed
+- normalizes 4E serial bytes before response-history comparison
 
-`slmp_live_verify.py`:
+### `slmp_live_verify.py`
 
-- loads `latest_live_cases.jsonl`
-- replays the canonical request sequence of each case, or each client trace
-- compares live responses with the saved mock expectations using:
-  - `exact`
-  - `shape`
-  - `end_code`
-- can apply per-profile overrides from `latest_live_cases.jsonl` via `--profile`
-- writes machine-readable and Markdown reports under `logs/`
+- loads `latest_live_cases.jsonl` by default
+- replays either the baseline request sequence or all client traces
+- compares live responses using `exact`, `shape`, or `end_code`

@@ -6,6 +6,7 @@ Checks:
   2. Request packet parity (all clients send identical bytes, except 4E serial)
   3. High-level named result parity for read/poll commands
 """
+import argparse
 import subprocess
 import json
 import math
@@ -39,6 +40,15 @@ CLIENTS = {
     "dotnet": _resolve_dotnet_client(),
     "cpp":    _resolve_cpp_client(),
     "node-red": ["node", f"{ROOT}/clients/node/client_wrapper.js"],
+}
+CLIENT_ORDER = tuple(CLIENTS.keys())
+CLIENT_ALIASES = {
+    "python": "python",
+    "dotnet": "dotnet",
+    "cpp": "cpp",
+    "node": "node-red",
+    "node-red": "node-red",
+    "nodered": "node-red",
 }
 
 HOST = "127.0.0.1"
@@ -526,6 +536,101 @@ TESTS = [
 
 
 # ---------------------------------------------------------------------------
+# CLI helpers
+# ---------------------------------------------------------------------------
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run the SLMP verification harness in full parity mode or in a "
+            "filtered single-client debug mode."
+        )
+    )
+    parser.add_argument("--host", default=HOST, help=f"Mock server host (default: {HOST})")
+    parser.add_argument("--port", type=int, default=PORT, help=f"Mock server port (default: {PORT})")
+    parser.add_argument(
+        "--clients",
+        default="all",
+        help="Comma-separated clients to run: all, python, dotnet, cpp, node-red",
+    )
+    parser.add_argument(
+        "--case-pattern",
+        default="",
+        help="Case-insensitive substring filter for test names",
+    )
+    parser.add_argument(
+        "--list-cases",
+        action="store_true",
+        help="List selected cases and exit without starting the mock server",
+    )
+    parser.add_argument(
+        "--write-latest",
+        action="store_true",
+        help=(
+            "Allow filtered runs to overwrite latest_* artifacts. By default, "
+            "filtered runs write timestamped files only."
+        ),
+    )
+    return parser.parse_args()
+
+
+def parse_selected_clients(raw_value):
+    raw_value = (raw_value or "all").strip().lower()
+    if raw_value in {"", "all"}:
+        return list(CLIENT_ORDER)
+
+    selected = []
+    seen = set()
+    for item in raw_value.split(","):
+        key = CLIENT_ALIASES.get(item.strip().lower())
+        if key is None:
+            valid = ", ".join(CLIENT_ORDER)
+            raise SystemExit(f"unknown client '{item.strip()}'; valid values: {valid}, all")
+        if key not in seen:
+            selected.append(key)
+            seen.add(key)
+    return selected
+
+
+def case_matches_pattern(name, pattern):
+    return not pattern or pattern.lower() in name.lower()
+
+
+def list_selected_cases(selected_clients, case_pattern):
+    print("Selected cases:")
+    matched = 0
+    runnable = 0
+    for test in TESTS:
+        name, cmd, addr, extra, flags, clients, expect_error, _meta = test
+        if not case_matches_pattern(name, case_pattern):
+            continue
+        matched += 1
+        resolved = resolve_clients(cmd, addr, extra, flags, clients, selected_clients)
+        scope = ",".join(resolved.keys()) if resolved else "skip(out-of-scope)"
+        if resolved:
+            runnable += 1
+        print(f"- [{scope}] {name}")
+    print(f"\nTotal matched cases: {matched}")
+    print(f"Runnable cases: {runnable}")
+
+
+def should_write_latest(selected_clients, case_pattern, force_write_latest):
+    return force_write_latest or (selected_clients == list(CLIENT_ORDER) and not case_pattern)
+
+
+def count_selected_cases(selected_clients, case_pattern):
+    matched = 0
+    runnable = 0
+    for test in TESTS:
+        name, cmd, addr, extra, flags, clients, expect_error, _meta = test
+        if not case_matches_pattern(name, case_pattern):
+            continue
+        matched += 1
+        if resolve_clients(cmd, addr, extra, flags, clients, selected_clients):
+            runnable += 1
+    return matched, runnable
+
+
+# ---------------------------------------------------------------------------
 # Previous results persistence
 # ---------------------------------------------------------------------------
 def load_prev_results():
@@ -646,12 +751,14 @@ def node_red_supports(command, _address, _extra, _flags):
     }
 
 
-def resolve_clients(command, address, extra, flags, clients):
+def resolve_clients(command, address, extra, flags, clients, selected_clients=None):
     resolved = dict(clients)
     if node_red_supports(command, address, extra, flags):
         resolved["node-red"] = CLIENTS["node-red"]
     else:
         resolved.pop("node-red", None)
+    if selected_clients is not None:
+        resolved = {name: resolved[name] for name in selected_clients if name in resolved}
     return resolved
 
 
@@ -852,9 +959,9 @@ def determine_live_replay_class(command, address, flags, expect_error):
     return "stateful"
 
 
-def write_live_case(case_payload):
+def write_live_case(path, case_payload):
     try:
-        with open(LIVE_CASES_FILE, "a", encoding="utf-8") as handle:
+        with open(path, "a", encoding="utf-8") as handle:
             handle.write(json.dumps(case_payload, ensure_ascii=False) + "\n")
     except Exception:
         pass
@@ -863,10 +970,28 @@ def write_live_case(case_payload):
 # ---------------------------------------------------------------------------
 # Main test runner
 # ---------------------------------------------------------------------------
-def test_case(name, command, address, extra, flags, clients, expect_error, meta, packets_json, log_fp, prev_result=None):
-    clients = resolve_clients(command, address, extra, flags, clients)
+def test_case(
+    name,
+    command,
+    address,
+    extra,
+    flags,
+    clients,
+    expect_error,
+    meta,
+    packets_json,
+    markers_json,
+    live_cases_file,
+    log_fp,
+    prev_result=None,
+    selected_clients=None,
+):
+    clients = resolve_clients(command, address, extra, flags, clients, selected_clients)
     prev_tag = f"  [Prev:{prev_result}]" if prev_result else ""
     log_print(f"Running: {name}{prev_tag}", log_fp)
+    if not clients:
+        log_print("  SKIP (no selected clients in scope)", log_fp)
+        return "skip"
     desc = generate_desc(command, address, extra, flags, clients, expect_error)
     log_print(f"  {desc}", log_fp)
 
@@ -941,7 +1066,6 @@ def test_case(name, command, address, extra, flags, clients, expect_error, meta,
         "type": "TEST_RESULT", "name": name, "result": result_str,
         "desc": desc, "n_clients": len(clients),
     }, ensure_ascii=False)
-    markers_json = packets_json.replace("latest_packets.jsonl", "latest_markers.jsonl")
     try:
         with open(markers_json, "a", encoding="utf-8") as mf:
             mf.write(marker + "\n")
@@ -980,26 +1104,50 @@ def test_case(name, command, address, extra, flags, clients, expect_error, meta,
         live_case["baseline_response_data_lengths"] = live_case["clients"][baseline_client]["response_data_lengths"]
     if meta.get("live_profiles"):
         live_case["live_profiles"] = meta["live_profiles"]
-    write_live_case(live_case)
+    write_live_case(live_cases_file, live_case)
 
     if all_ok:
         status_tag = "OK (NG)" if expect_error else "OK"
         log_print(f"  {status_tag}", log_fp)
-    return all_ok
+        return "pass"
+    return "fail"
 
 
 def main():
+    args = parse_args()
+    selected_clients = parse_selected_clients(args.clients)
+    if args.list_cases:
+        list_selected_cases(selected_clients, args.case_pattern)
+        return
+
+    global HOST, PORT
+    HOST = args.host
+    PORT = args.port
+
     logs_dir = f"{ROOT}/logs"
     os.makedirs(logs_dir, exist_ok=True)
-    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = f"{logs_dir}/packet_log_{ts}.log"
-    packets_json = f"{logs_dir}/latest_packets.jsonl"
+    update_latest = should_write_latest(selected_clients, args.case_pattern, args.write_latest)
+    selected_test_count, runnable_test_count = count_selected_cases(selected_clients, args.case_pattern)
+    if selected_test_count == 0:
+        print("No cases matched the current filter.")
+        return
+    if runnable_test_count == 0:
+        print("Matched cases exist, but none are in scope for the selected clients.")
+        return
+    if update_latest:
+        packets_json = f"{logs_dir}/latest_packets.jsonl"
+        markers_json = f"{logs_dir}/latest_markers.jsonl"
+        live_cases_file = LIVE_CASES_FILE
+    else:
+        packets_json = f"{logs_dir}/packets_{ts}.jsonl"
+        markers_json = f"{logs_dir}/markers_{ts}.jsonl"
+        live_cases_file = f"{logs_dir}/live_cases_{ts}.jsonl"
 
-    markers_json = f"{logs_dir}/latest_markers.jsonl"
-    # Clear both logs so line counting and marker pairing are fresh
     open(packets_json, "w").close()
     open(markers_json, "w").close()
-    open(LIVE_CASES_FILE, "w").close()
+    open(live_cases_file, "w").close()
 
     server_log_path = f"{logs_dir}/server_{ts}.log"
     server_log_fp = open(server_log_path, "w", encoding="utf-8")
@@ -1011,20 +1159,50 @@ def main():
 
     passed = 0
     failed = 0
+    skipped = 0
     fail_names = []
     prev_results = load_prev_results()
     current_results = {}
+    mode = "single-client" if len(selected_clients) == 1 else "parity"
 
     with open(log_path, "w", encoding="utf-8") as log_fp:
         log_fp.write(f"Verification run: {datetime.now().isoformat()}\n\n")
         try:
-            log_print(f"Starting comprehensive verification ({len(TESTS)} tests)...\n", log_fp)
+            log_print(
+                (
+                    f"Starting {mode} verification "
+                    f"(matched={selected_test_count}, runnable={runnable_test_count}, "
+                    f"clients={','.join(selected_clients)}, "
+                    f"write_latest={'yes' if update_latest else 'no'})...\n"
+                ),
+                log_fp,
+            )
 
             for t in TESTS:
                 name, cmd, addr, extra, flags, clients, expect_error, meta = t
+                if not case_matches_pattern(name, args.case_pattern):
+                    continue
                 prev = prev_results.get(name)
-                ok = test_case(name, cmd, addr, extra, flags, clients, expect_error, meta, packets_json, log_fp, prev_result=prev)
-                if ok:
+                result = test_case(
+                    name,
+                    cmd,
+                    addr,
+                    extra,
+                    flags,
+                    clients,
+                    expect_error,
+                    meta,
+                    packets_json,
+                    markers_json,
+                    live_cases_file,
+                    log_fp,
+                    prev_result=prev,
+                    selected_clients=selected_clients,
+                )
+                if result == "skip":
+                    skipped += 1
+                    continue
+                if result == "pass":
                     passed += 1
                     current_results[name] = "OK(NG)" if expect_error else "OK"
                 else:
@@ -1037,16 +1215,26 @@ def main():
                 log_print(f"\nFAILED ({failed}):", log_fp)
                 for fn in fail_names:
                     log_print(f"  - {fn}", log_fp)
-            summary = f"\n{'ALL PASSED' if failed == 0 else 'SOME FAILED'}: {passed}/{passed+failed}"
+            executed = passed + failed
+            summary = (
+                f"\n{'ALL PASSED' if failed == 0 else 'SOME FAILED'}: "
+                f"passed={passed} failed={failed} skipped={skipped} executed={executed}"
+            )
             log_print(summary, log_fp)
+            if not update_latest:
+                log_print("Filtered run: latest_* artifacts and prev_results.json were left unchanged.", log_fp)
 
         finally:
             server_proc.terminate()
             server_proc.wait()
             server_log_fp.close()
-            save_results(current_results)
+            if update_latest:
+                save_results(current_results)
 
     print(f"\nLog: {log_path}")
+    print(f"Packets JSON: {packets_json}")
+    print(f"Markers JSON: {markers_json}")
+    print(f"Live cases JSONL: {live_cases_file}")
 
 
 if __name__ == "__main__":
