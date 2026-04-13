@@ -20,11 +20,24 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
 
 ROOT = os.path.dirname(os.path.abspath(__file__)).replace("\\", "/")
 PREV_RESULTS_FILE = f"{ROOT}/logs/prev_results.json"
+LIVE_CASES_FILE = f"{ROOT}/logs/latest_live_cases.jsonl"
+
+
+def _resolve_dotnet_client():
+    exe = f"{ROOT}/clients/dotnet/SlmpVerifyClient/bin/Debug/net9.0/SlmpVerifyClient.exe"
+    dll = f"{ROOT}/clients/dotnet/SlmpVerifyClient/bin/Debug/net9.0/SlmpVerifyClient.dll"
+    return [exe] if os.path.exists(exe) else ["dotnet", dll]
+
+
+def _resolve_cpp_client():
+    exe = f"{ROOT}/clients/cpp/cpp_verify_client.exe"
+    native = f"{ROOT}/clients/cpp/cpp_verify_client"
+    return [exe] if os.path.exists(exe) else [native]
 
 CLIENTS = {
     "python": ["python", f"{ROOT}/clients/python/client_wrapper.py"],
-    "dotnet": [f"{ROOT}/clients/dotnet/SlmpVerifyClient/bin/Debug/net9.0/SlmpVerifyClient.exe"],
-    "cpp":    [f"{ROOT}/clients/cpp/cpp_verify_client.exe"],
+    "dotnet": _resolve_dotnet_client(),
+    "cpp":    _resolve_cpp_client(),
     "node-red": ["node", f"{ROOT}/clients/node/client_wrapper.js"],
 }
 
@@ -42,8 +55,26 @@ CLIENTS_NO_CPP = {k: CLIENTS[k] for k in ("python", "dotnet", "node-red")}
 #   clients: dict (CLIENTS or CLIENTS_DP)
 #   expect_error: if True, expect status="error" from all clients
 # ---------------------------------------------------------------------------
-def _t(name, cmd, addr, extra=None, flags=None, clients=None, expect_error=False):
-    return (name, cmd, addr, extra or [], flags or {}, clients or CLIENTS, expect_error)
+def _t(name, cmd, addr, extra=None, flags=None, clients=None, expect_error=False, meta=None):
+    return (name, cmd, addr, extra or [], flags or {}, clients or CLIENTS, expect_error, meta or {})
+
+
+R120_PROFILE = "r120pcpu_tcp1025"
+
+
+def _live_profile(profile, *, comparison_mode=None, responses=None, end_codes=None, lengths=None, note=None):
+    override = {}
+    if comparison_mode is not None:
+        override["comparison_mode"] = comparison_mode
+    if responses is not None:
+        override["responses"] = responses
+    if end_codes is not None:
+        override["end_codes"] = end_codes
+    if lengths is not None:
+        override["lengths"] = lengths
+    if note is not None:
+        override["note"] = note
+    return {"live_profiles": {profile: override}}
 
 
 TESTS = [
@@ -65,13 +96,6 @@ TESTS = [
     _t("3E QL TS  Bit  Read  4pts",          "read",  "TS0",   [4],           {"mode": "bit"}),
     _t("3E QL TC  Bit  Write [0,1,0,1]",    "write", "TC0",   [0, 1, 0, 1], {"mode": "bit"}),
     _t("3E QL TC  Bit  Read  4pts",          "read",  "TC0",   [4],           {"mode": "bit"}),
-    # Long Timer
-    _t("3E QL LTN Word Write [1000,2000]",   "write", "LTN0",  [1000, 2000]),
-    _t("3E QL LTN Word Read  2pts",          "read",  "LTN0",  [2]),
-    _t("3E QL LTS Bit  Write [1,0]",         "write", "LTS0",  [1, 0],        {"mode": "bit"}),
-    _t("3E QL LTS Bit  Read  2pts",          "read",  "LTS0",  [2],           {"mode": "bit"}),
-    _t("3E QL LTC Bit  Write [0,1]",         "write", "LTC0",  [0, 1],        {"mode": "bit"}),
-    _t("3E QL LTC Bit  Read  2pts",          "read",  "LTC0",  [2],           {"mode": "bit"}),
     # Retentive Timer
     _t("3E QL STN Word Write [200,300]",     "write", "STN0",  [200, 300]),
     _t("3E QL STN Word Read  2pts",          "read",  "STN0",  [2]),
@@ -79,13 +103,6 @@ TESTS = [
     _t("3E QL STS Bit  Read  2pts",          "read",  "STS0",  [2],           {"mode": "bit"}),
     _t("3E QL STC Bit  Write [1,0]",         "write", "STC0",  [1, 0],        {"mode": "bit"}),
     _t("3E QL STC Bit  Read  2pts",          "read",  "STC0",  [2],           {"mode": "bit"}),
-    # Long Retentive Timer
-    _t("3E QL LSTN Word Write [999]",        "write", "LSTN0", [999]),
-    _t("3E QL LSTN Word Read  1pt",          "read",  "LSTN0", [1]),
-    _t("3E QL LSTS Bit  Write [1,0]",        "write", "LSTS0", [1, 0],        {"mode": "bit"}),
-    _t("3E QL LSTS Bit  Read  2pts",         "read",  "LSTS0", [2],           {"mode": "bit"}),
-    _t("3E QL LSTC Bit  Write [0,1]",        "write", "LSTC0", [0, 1],        {"mode": "bit"}),
-    _t("3E QL LSTC Bit  Read  2pts",         "read",  "LSTC0", [2],           {"mode": "bit"}),
     # Counter
     _t("3E QL CN  Word Write [50,60]",       "write", "CN0",   [50, 60]),
     _t("3E QL CN  Word Read  2pts",          "read",  "CN0",   [2]),
@@ -93,18 +110,23 @@ TESTS = [
     _t("3E QL CS  Bit  Read  2pts",          "read",  "CS0",   [2],           {"mode": "bit"}),
     _t("3E QL CC  Bit  Write [0,1]",         "write", "CC0",   [0, 1],        {"mode": "bit"}),
     _t("3E QL CC  Bit  Read  2pts",          "read",  "CC0",   [2],           {"mode": "bit"}),
-    # Long Counter
-    _t("3E QL LCN Word Write [500,600]",     "write", "LCN0",  [500, 600]),
-    _t("3E QL LCN Word Read  2pts",          "read",  "LCN0",  [2]),
-    _t("3E QL LCS Bit  Write [1,0]",         "write", "LCS0",  [1, 0],        {"mode": "bit"}),
-    _t("3E QL LCS Bit  Read  2pts",          "read",  "LCS0",  [2],           {"mode": "bit"}),
-    _t("3E QL LCC Bit  Write [0,1]",         "write", "LCC0",  [0, 1],        {"mode": "bit"}),
-    _t("3E QL LCC Bit  Read  2pts",          "read",  "LCC0",  [2],           {"mode": "bit"}),
     # Other bit devices
     _t("3E QL L   Bit  Write [1,0,1,0]",    "write", "L0",    [1, 0, 1, 0],  {"mode": "bit"}),
     _t("3E QL L   Bit  Read  4pts",          "read",  "L0",    [4],            {"mode": "bit"}),
     _t("3E QL F   Bit  Write [1,0,1,0]",    "write", "F0",    [1, 0, 1, 0],  {"mode": "bit"}),
-    _t("3E QL F   Bit  Read  4pts",          "read",  "F0",    [4],            {"mode": "bit"}),
+    _t(
+        "3E QL F   Bit  Read  4pts",
+        "read",
+        "F0",
+        [4],
+        {"mode": "bit"},
+        meta=_live_profile(
+            R120_PROFILE,
+            comparison_mode="exact",
+            responses=["d00000ffff0300040000000010"],
+            note="Validated F-device bit readback differs from the mock fixture on this target.",
+        ),
+    ),
     _t("3E QL V   Bit  Write [0,1,0,1]",    "write", "V0",    [0, 1, 0, 1],  {"mode": "bit"}),
     _t("3E QL V   Bit  Read  4pts",          "read",  "V0",    [4],            {"mode": "bit"}),
     _t("3E QL DX  Bit  Read  4pts",          "read",  "DX0",   [4],            {"mode": "bit"}),
@@ -113,8 +135,8 @@ TESTS = [
     # Index registers
     _t("3E QL Z   Word Write [10]",          "write", "Z0",    [10]),
     _t("3E QL Z   Word Read  1pt",           "read",  "Z0",    [1]),
-    _t("3E QL LZ  Word Write [20]",          "write", "LZ0",   [20]),
-    _t("3E QL LZ  Word Read  1pt",           "read",  "LZ0",   [1]),
+    _t("3E iQR LZ  DWord Write [20]",        "write", "LZ0",   [20],          {"series": "iqr", "mode": "dword"}),
+    _t("3E iQR LZ  DWord Read  1pt",         "read",  "LZ0",   [1],           {"series": "iqr", "mode": "dword"}),
 
     # ===== 3E QL Bit Read/Write =====
     _t("3E QL M   Bit Write [1,0,1,0]",     "write", "M0",    [1, 0, 1, 0], {"mode": "bit"}),
@@ -125,7 +147,19 @@ TESTS = [
     _t("3E QL B   Bit Write [0,1,0,1]",     "write", "B0",    [0, 1, 0, 1],  {"mode": "bit"}),
     _t("3E QL B   Bit Read  4pts",           "read",  "B0",    [4],           {"mode": "bit"}),
     _t("3E QL SB  Bit Read  4pts",           "read",  "SB0",   [4],           {"mode": "bit"}),
-    _t("3E QL SW  Bit Read  4pts",           "read",  "SW0",   [4],           {"mode": "bit"}),
+    _t(
+        "3E iQR SW  Bit Read  4pts",
+        "read",
+        "SW0",
+        [4],
+        {"series": "iqr", "mode": "bit"},
+        meta=_live_profile(
+            R120_PROFILE,
+            comparison_mode="end_code",
+            end_codes=[0xC05C],
+            note="Direct SW bit access is rejected on the validated R120PCPU TCP path.",
+        ),
+    ),
 
     # ===== 3E QL DWord =====
     _t("3E QL D   DWord Write [100000,200000]", "write", "D200", [100000, 200000], {"mode": "dword"}),
@@ -156,12 +190,54 @@ TESTS = [
     _t("4E iQR D  Word Read  2pts",            "read",  "D600", [2],          {"frame": "4e", "series": "iqr"}),
     _t("4E iQR M  Bit Write [1,1,0]",         "write", "M300", [1, 1, 0],    {"frame": "4e", "series": "iqr", "mode": "bit"}),
     _t("4E iQR M  Bit Read  3pts",             "read",  "M300", [3],          {"frame": "4e", "series": "iqr", "mode": "bit"}),
+    _t(
+        "3E iQR LTN/LSTN/LCN Random Write DWords",
+        "random-write-words",
+        "",
+        [],
+        {"series": "iqr", "dwords": "LTN10=123456,LSTN20=234567,LCN30=999"},
+    ),
+    _t(
+        "3E iQR LTN/LSTN/LCN Random Read  DWords",
+        "random-read",
+        "",
+        [],
+        {"series": "iqr", "dword-devs": "LTN10,LSTN20,LCN30"},
+    ),
+    _t("3E iQR LCS Bit  Write [1,0]",         "write", "LCS30", [1, 0],       {"series": "iqr", "mode": "bit"}),
+    _t("3E iQR LCS Bit  Read  2pts",          "read",  "LCS30", [2],          {"series": "iqr", "mode": "bit"}),
+    _t("3E iQR LCC Bit  Write [0,1]",         "write", "LCC40", [0, 1],       {"series": "iqr", "mode": "bit"}),
+    _t("3E iQR LCC Bit  Read  2pts",          "read",  "LCC40", [2],          {"series": "iqr", "mode": "bit"}),
 
     # ===== Routing (Other Station) =====
     _t("Routing NW1-ST2 D  Word Write [5000]", "write", "D700", [5000], {"target": "1,2,1023,0"}),
     _t("Routing NW1-ST2 D  Word Read  1pt",    "read",  "D700", [1],    {"target": "1,2,1023,0"}),
-    _t("Routing NW2-ST3 M  Bit Write [1,0]",   "write", "M400", [1, 0], {"target": "2,3,1023,0", "mode": "bit"}),
-    _t("Routing NW2-ST3 M  Bit Read  2pts",    "read",  "M400", [2],    {"target": "2,3,1023,0", "mode": "bit"}),
+    _t(
+        "Routing NW2-ST3 M  Bit Write [1,0]",
+        "write",
+        "M400",
+        [1, 0],
+        {"target": "2,3,1023,0", "mode": "bit"},
+        meta=_live_profile(
+            R120_PROFILE,
+            comparison_mode="end_code",
+            end_codes=[0x4A00],
+            note="The validated target rejects the NW2-ST3 routed bit path with end code 0x004A.",
+        ),
+    ),
+    _t(
+        "Routing NW2-ST3 M  Bit Read  2pts",
+        "read",
+        "M400",
+        [2],
+        {"target": "2,3,1023,0", "mode": "bit"},
+        meta=_live_profile(
+            R120_PROFILE,
+            comparison_mode="end_code",
+            end_codes=[0x4A00],
+            note="The validated target rejects the NW2-ST3 routed bit path with end code 0x004A.",
+        ),
+    ),
 
     # ===== Random Access =====
     _t("3E QL Random Write Words D130=10,D131=20 DW:D230=65537",
@@ -176,10 +252,32 @@ TESTS = [
        "random-read",        "", [], {"word-devs": "D150,D151", "frame": "4e"}),
 
     # ===== Block Access =====
-    _t("3E QL Block Write D800=10:20:30 / M500=1:0:1",
-       "block-write", "", [], {"word-blocks": "D800=10:20:30", "bit-blocks": "M500=1:0:1"}),
-    _t("3E QL Block Read  D800x3 / M500x3",
-       "block-read",  "", [], {"word-blocks": "D800=3", "bit-blocks": "M500=3"}),
+    _t(
+        "3E QL Block Write D800=10:20:30 / M500=1:0:1",
+        "block-write",
+        "",
+        [],
+        {"word-blocks": "D800=10:20:30", "bit-blocks": "M500=1:0:1"},
+        meta=_live_profile(
+            R120_PROFILE,
+            comparison_mode="end_code",
+            end_codes=[0xC056],
+            note="The validated R120PCPU target rejects the first mixed 1406 write; split fallback is required.",
+        ),
+    ),
+    _t(
+        "3E QL Block Read  D800x3 / M500x3",
+        "block-read",
+        "",
+        [],
+        {"word-blocks": "D800=3", "bit-blocks": "M500=3"},
+        meta=_live_profile(
+            R120_PROFILE,
+            comparison_mode="exact",
+            responses=["d00000ffff03000e000000000000000000000000000000"],
+            note="After the mixed block write is rejected, the validated R120PCPU target keeps the zeroed baseline state.",
+        ),
+    ),
     _t("4E QL Block Write D850=5:6",
        "block-write", "", [], {"word-blocks": "D850=5:6", "frame": "4e"}),
     _t("4E QL Block Read  D850x2",
@@ -189,7 +287,18 @@ TESTS = [
     _t("3E Remote RUN",         "remote-run",         "", []),
     _t("3E Remote STOP",        "remote-stop",        "", []),
     _t("3E Remote PAUSE",       "remote-pause",       "", []),
-    _t("3E Remote LATCH CLEAR", "remote-latch-clear", "", []),
+    _t(
+        "3E Remote LATCH CLEAR",
+        "remote-latch-clear",
+        "",
+        [],
+        meta=_live_profile(
+            R120_PROFILE,
+            comparison_mode="end_code",
+            end_codes=[0x4013],
+            note="Remote latch clear is target-dependent on the validated R120PCPU path.",
+        ),
+    ),
     _t("4E Remote RUN",         "remote-run",         "", [], {"frame": "4e"}),
     _t("4E Remote STOP",        "remote-stop",        "", [], {"frame": "4e"}),
     _t("4E iQR Remote RUN",     "remote-run",         "", [], {"frame": "4e", "series": "iqr"}),
@@ -209,24 +318,68 @@ TESTS = [
        "read-named", "D910,D920:F,D930.3", []),
     _t("3E QL Poll Once   D910 / D920:F / D930.3",
        "poll-once", "D910,D920:F,D930.3", []),
-    _t("3E QL Named Write Z/LZ/LTN/LSTN/LCN",
-       "write-named", "Z100=321,LZ110=654,LTN120=777,LSTN130=888,LCN140=999", []),
-    _t("3E QL Named Read  Z/LZ/LTN/LSTN/LCN",
-       "read-named", "Z100,LZ110,LTN120,LSTN130,LCN140", []),
-    _t("3E QL Poll Once   Z/LZ/LTN/LSTN/LCN",
-       "poll-once", "Z100,LZ110,LTN120,LSTN130,LCN140", []),
-    _t("3E QL Named Write RD:D",
-       "write-named", "RD150:D=305419896", []),
-    _t("3E QL Named Read  RD:D",
-       "read-named", "RD150:D", []),
-    _t("3E QL Poll Once   RD:D",
-       "poll-once", "RD150:D", []),
-    _t("3E QL Named Write LTS/LTC/LSTS/LSTC/LCS/LCC",
-       "write-named", "LTS100=1,LTC110=0,LSTS120=1,LSTC130=0,LCS140=1,LCC150=0", []),
-    _t("3E QL Named Read  LTS/LTC/LSTS/LSTC/LCS/LCC",
-       "read-named", "LTS100,LTC110,LSTS120,LSTC130,LCS140,LCC150", []),
-    _t("3E QL Poll Once   LTS/LTC/LSTS/LSTC/LCS/LCC",
-       "poll-once", "LTS100,LTC110,LSTS120,LSTC130,LCS140,LCC150", []),
+    _t(
+        "3E iQR Named Write Z/LZ:D/LTN:D/LSTN:D/LCN:D",
+        "write-named",
+        "Z10=321,LZ0:D=654,LTN10:D=777,LSTN20:D=888,LCN30:D=999",
+        [],
+        {"series": "iqr"},
+    ),
+    _t(
+        "3E iQR Named Read  Z/LZ:D/LTN:D/LSTN:D/LCN:D",
+        "read-named",
+        "Z10,LZ0:D,LTN10:D,LSTN20:D,LCN30:D",
+        [],
+        {"series": "iqr"},
+    ),
+    _t(
+        "3E iQR Poll Once   Z/LZ:D/LTN:D/LSTN:D/LCN:D",
+        "poll-once",
+        "Z10,LZ0:D,LTN10:D,LSTN20:D,LCN30:D",
+        [],
+        {"series": "iqr"},
+    ),
+    _t("3E iQR Named Write RD:D",
+       "write-named", "RD10:D=305419896", [], {"series": "iqr"}),
+    _t("3E iQR Named Read  RD:D",
+       "read-named", "RD10:D", [], {"series": "iqr"}),
+    _t("3E iQR Poll Once   RD:D",
+       "poll-once", "RD10:D", [], {"series": "iqr"}),
+    _t(
+        "3E iQR Named Write LTS/LTC/LSTS/LSTC",
+        "write-named",
+        "LTS10=1,LTC11=0,LSTS20=1,LSTC21=0",
+        [],
+        {"series": "iqr"},
+    ),
+    _t(
+        "3E iQR Named Read  LTS/LTC/LSTS/LSTC",
+        "read-named",
+        "LTS10,LTC11,LSTS20,LSTC21",
+        [],
+        {"series": "iqr"},
+        meta=_live_profile(
+            R120_PROFILE,
+            comparison_mode="shape",
+            end_codes=[0x0000, 0x0000, 0x0000, 0x0000],
+            lengths=[8, 8, 8, 8],
+            note="Structured long-timer helper bits map differently on the validated target than in the generic mock fixture.",
+        ),
+    ),
+    _t(
+        "3E iQR Poll Once   LTS/LTC/LSTS/LSTC",
+        "poll-once",
+        "LTS10,LTC11,LSTS20,LSTC21",
+        [],
+        {"series": "iqr"},
+        meta=_live_profile(
+            R120_PROFILE,
+            comparison_mode="shape",
+            end_codes=[0x0000, 0x0000, 0x0000, 0x0000],
+            lengths=[8, 8, 8, 8],
+            note="Structured long-timer helper bits map differently on the validated target than in the generic mock fixture.",
+        ),
+    ),
 
     # ===== Memory Read/Write =====
     _t("Memory Write 0x100 [100,200,300]",    "memory-write", "0x100", [100, 200, 300]),
@@ -247,20 +400,128 @@ TESTS = [
     # ===== Extended Address Extended Device (all 3 clients) =====
     _t("3E J1\\SW0  Ext Word Write [50,60]", "write-ext", "J1\\SW0",  [50, 60]),
     _t("3E J1\\SW0  Ext Word Read  2pts",    "read-ext",  "J1\\SW0",  [2]),
-    _t("3E J1\\SW0  Ext Bit Write [1,0,1]",  "write-ext", "J1\\SW0",  [1, 0, 1], {"mode": "bit"}),
-    _t("3E J1\\SW0  Ext Bit Read  3pts",     "read-ext",  "J1\\SW0",  [3],        {"mode": "bit"}),
+    _t(
+        "3E J1\\SW0  Ext Bit Write [1,0,1]",
+        "write-ext",
+        "J1\\SW0",
+        [1, 0, 1],
+        {"mode": "bit"},
+        meta=_live_profile(
+            R120_PROFILE,
+            comparison_mode="end_code",
+            end_codes=[0xC05C],
+            note="J-link SW bit access is rejected while the same path accepts word access on the validated target.",
+        ),
+    ),
+    _t(
+        "3E J1\\SW0  Ext Bit Read  3pts",
+        "read-ext",
+        "J1\\SW0",
+        [3],
+        {"mode": "bit"},
+        meta=_live_profile(
+            R120_PROFILE,
+            comparison_mode="end_code",
+            end_codes=[0xC05C],
+            note="J-link SW bit access is rejected while the same path accepts word access on the validated target.",
+        ),
+    ),
     _t("3E U3\\G100 Ext Word Write [11,22]",  "write-ext", "U3\\G100", [11, 22]),
-    _t("3E U3\\G100 Ext Word Read  2pts",     "read-ext",  "U3\\G100", [2]),
-    _t("3E U3\\G100 Ext Bit Write [1,0,1]",  "write-ext", "U3\\G100", [1, 0, 1],  {"mode": "bit"}),
-    _t("3E U3\\G100 Ext Bit Read  3pts",     "read-ext",  "U3\\G100", [3],         {"mode": "bit"}),
-    _t("3E U1\\HG0  Ext Word Write [33,44]", "write-ext", "U1\\HG0",  [33, 44]),
-    _t("3E U1\\HG0  Ext Word Read  2pts",    "read-ext",  "U1\\HG0",  [2]),
+    _t(
+        "3E U3\\G100 Ext Word Read  2pts",
+        "read-ext",
+        "U3\\G100",
+        [2],
+        meta=_live_profile(
+            R120_PROFILE,
+            comparison_mode="shape",
+            note="Validated buffer-memory content is target-state dependent even when the request shape is accepted.",
+        ),
+    ),
+    _t(
+        "3E U3\\G100 Ext Bit Write [1,0,1]",
+        "write-ext",
+        "U3\\G100",
+        [1, 0, 1],
+        {"mode": "bit"},
+        meta=_live_profile(
+            R120_PROFILE,
+            comparison_mode="end_code",
+            end_codes=[0xC05C],
+            note="Validated U3\\G bit access is rejected on this target.",
+        ),
+    ),
+    _t(
+        "3E U3\\G100 Ext Bit Read  3pts",
+        "read-ext",
+        "U3\\G100",
+        [3],
+        {"mode": "bit"},
+        meta=_live_profile(
+            R120_PROFILE,
+            comparison_mode="end_code",
+            end_codes=[0xC05C],
+            note="Validated U3\\G bit access is rejected on this target.",
+        ),
+    ),
+    _t(
+        "3E U1\\HG0  Ext Word Write [33,44]",
+        "write-ext",
+        "U1\\HG0",
+        [33, 44],
+        meta=_live_profile(
+            R120_PROFILE,
+            comparison_mode="end_code",
+            end_codes=[0xC05B],
+            note="Direct HG access is rejected on the validated R120PCPU target.",
+        ),
+    ),
+    _t(
+        "3E U1\\HG0  Ext Word Read  2pts",
+        "read-ext",
+        "U1\\HG0",
+        [2],
+        meta=_live_profile(
+            R120_PROFILE,
+            comparison_mode="end_code",
+            end_codes=[0xC05B],
+            note="Direct HG access is rejected on the validated R120PCPU target.",
+        ),
+    ),
     _t("4E J1\\SW0  Ext Word Write [70,80]", "write-ext", "J1\\SW0",  [70, 80],   {"frame": "4e"}),
     _t("4E J1\\SW0  Ext Word Read  2pts",    "read-ext",  "J1\\SW0",  [2],         {"frame": "4e"}),
 
     # ===== Error / NG Conditions =====
-    _t("NG 3E Data Length Over 1001pts",  "read", "D0", [1001], {},                 CLIENTS, True),
-    _t("NG 4E Data Length Over 1001pts",  "read", "D0", [1001], {"frame": "4e"},    CLIENTS, True),
+    _t(
+        "NG 3E Data Length Over 1001pts",
+        "read",
+        "D0",
+        [1001],
+        {},
+        CLIENTS,
+        True,
+        _live_profile(
+            R120_PROFILE,
+            comparison_mode="end_code",
+            end_codes=[0xC051],
+            note="This validated target returns 0xC051 for 1001-point oversize reads.",
+        ),
+    ),
+    _t(
+        "NG 4E Data Length Over 1001pts",
+        "read",
+        "D0",
+        [1001],
+        {"frame": "4e"},
+        CLIENTS,
+        True,
+        _live_profile(
+            R120_PROFILE,
+            comparison_mode="end_code",
+            end_codes=[0xC051],
+            note="This validated target returns 0xC051 for 1001-point oversize reads.",
+        ),
+    ),
 ]
 
 
@@ -362,11 +623,11 @@ def generate_desc(cmd, addr, extra, flags, clients, expect_error=False):
 # ---------------------------------------------------------------------------
 def build_cmd_args(command, address, extra, flags):
     """Build the argument list appended to [HOST, PORT, command, address]."""
-    args = []
+    flag_args = []
     for k, v in flags.items():
-        args += [f"--{k}", str(v)]
-    args += [str(a) for a in extra]
-    return args
+        flag_args += [f"--{k}", str(v)]
+    extra_args = [str(a) for a in extra]
+    return flag_args + extra_args
 
 
 def node_red_supports(command, _address, _extra, _flags):
@@ -376,6 +637,9 @@ def node_red_supports(command, _address, _extra, _flags):
         "read-type",
         "random-read",
         "random-write-words",
+        "random-write-bits",
+        "block-read",
+        "block-write",
         "read-named",
         "write-named",
         "poll-once",
@@ -394,9 +658,13 @@ def resolve_clients(command, address, extra, flags, clients):
 def run_client(client_name, command, address, extra, flags):
     cmd_prefix = CLIENTS[client_name]
     exe_path = cmd_prefix[0]
-    if exe_path.lower().endswith(".exe") and not os.path.exists(exe_path):
+    if exe_path not in {"python", "python3", "node", "dotnet"} and not os.path.exists(exe_path):
         return {"status": "error", "message": f"missing executable: {exe_path}"}
+    if exe_path == "dotnet" and (len(cmd_prefix) < 2 or not os.path.exists(cmd_prefix[1])):
+        return {"status": "error", "message": f"missing executable: {cmd_prefix[1] if len(cmd_prefix) > 1 else 'dotnet target'}"}
     extra_args = build_cmd_args(command, address, extra, flags)
+    if client_name == "python":
+        extra_args = [str(a) for a in extra] + [item for kv in flags.items() for item in (f"--{kv[0]}", str(kv[1]))]
     cmd = cmd_prefix + [HOST, str(PORT), command, address] + extra_args
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=6)
@@ -439,12 +707,58 @@ def get_new_reqs(path, line_count_before):
         return []
 
 
+def get_new_packet_entries(path, line_count_before):
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.readlines()[line_count_before:]
+        entries = []
+        for line in lines:
+            try:
+                entries.append(json.loads(line))
+            except Exception:
+                pass
+        return entries
+    except Exception:
+        return []
+
+
 def normalize_packet(hex_str, frame):
     """Normalize 4E serial bytes (bytes 2-5) to zeros for comparison."""
     b = bytes.fromhex(hex_str)
     if frame == "4e" and len(b) >= 6 and b[:2] == bytes.fromhex("5400"):
         b = b[:2] + b"\x00\x00\x00\x00" + b[6:]
     return b.hex()
+
+
+def normalize_response(hex_str):
+    b = bytes.fromhex(hex_str)
+    if len(b) >= 6 and b[:2] == bytes.fromhex("d400"):
+        b = b[:2] + b"\x00\x00\x00\x00" + b[6:]
+    return b.hex()
+
+
+def parse_response_end_code(hex_str):
+    try:
+        b = bytes.fromhex(hex_str)
+        if b[:2] == bytes.fromhex("d000"):
+            return int.from_bytes(b[9:11], "little")
+        if b[:2] == bytes.fromhex("d400"):
+            return int.from_bytes(b[13:15], "little")
+    except Exception:
+        pass
+    return None
+
+
+def response_data_length(hex_str):
+    try:
+        b = bytes.fromhex(hex_str)
+        if b[:2] == bytes.fromhex("d000"):
+            return int.from_bytes(b[7:9], "little") - 2
+        if b[:2] == bytes.fromhex("d400"):
+            return int.from_bytes(b[11:13], "little") - 2
+    except Exception:
+        pass
+    return None
 
 
 def requires_packet_parity(command):
@@ -484,10 +798,72 @@ def results_equivalent(left, right):
     return left == right
 
 
+def _extract_address_prefixes(address):
+    prefixes = []
+    for item in str(address or "").split(","):
+        base = item.strip()
+        if not base:
+            continue
+        if "=" in base:
+            base = base.split("=", 1)[0].strip()
+        if "\\" in base:
+            base = base.split("\\", 1)[1]
+        if "/" in base:
+            base = base.split("/", 1)[1]
+        if "." in base:
+            base = base.split(".", 1)[0]
+        if ":" in base and "\\" not in item and "/" not in item:
+            base = base.rsplit(":", 1)[0]
+        prefix = []
+        for ch in base:
+            if ch.isalpha():
+                prefix.append(ch.upper())
+            else:
+                break
+        if prefix:
+            prefixes.append("".join(prefix))
+    return prefixes
+
+
+def determine_live_compare_mode(command, address, flags, expect_error):
+    if expect_error:
+        return "end_code"
+    if command == "read-type":
+        return "shape"
+    if command in {"remote-run", "remote-stop", "remote-pause", "remote-latch-clear", "remote-reset"}:
+        return "end_code"
+    dynamic_prefixes = {"SM", "SD", "SB", "SW", "X", "DX"}
+    if command in {"read", "read-ext", "read-named", "poll-once"}:
+        prefixes = _extract_address_prefixes(address)
+        if prefixes and any(prefix in dynamic_prefixes for prefix in prefixes):
+            return "shape"
+    return "exact"
+
+
+def determine_live_replay_class(command, address, flags, expect_error):
+    if command in {"remote-run", "remote-stop", "remote-pause", "remote-latch-clear", "remote-reset"}:
+        return "remote_control"
+    if expect_error or command in {"read-type", "self-test"}:
+        return "safe"
+    if command in {"read", "read-ext"}:
+        prefixes = _extract_address_prefixes(address)
+        if prefixes and all(prefix in {"SM", "SD", "SB", "SW", "X", "DX"} for prefix in prefixes):
+            return "safe"
+    return "stateful"
+
+
+def write_live_case(case_payload):
+    try:
+        with open(LIVE_CASES_FILE, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(case_payload, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # Main test runner
 # ---------------------------------------------------------------------------
-def test_case(name, command, address, extra, flags, clients, expect_error, packets_json, log_fp, prev_result=None):
+def test_case(name, command, address, extra, flags, clients, expect_error, meta, packets_json, log_fp, prev_result=None):
     clients = resolve_clients(command, address, extra, flags, clients)
     prev_tag = f"  [Prev:{prev_result}]" if prev_result else ""
     log_print(f"Running: {name}{prev_tag}", log_fp)
@@ -496,10 +872,14 @@ def test_case(name, command, address, extra, flags, clients, expect_error, packe
 
     results = {}
     reqs_by_client = {}
+    resps_by_client = {}
+    traces_by_client = {}
     for client_name in clients:
         line_before = count_log_lines(packets_json)
         results[client_name] = run_client(client_name, command, address, extra, flags)
-        reqs_by_client[client_name] = get_new_reqs(packets_json, line_before)
+        traces_by_client[client_name] = get_new_packet_entries(packets_json, line_before)
+        reqs_by_client[client_name] = [entry["data"] for entry in traces_by_client[client_name] if entry.get("direction") == "REQ"]
+        resps_by_client[client_name] = [entry["data"] for entry in traces_by_client[client_name] if entry.get("direction") == "RES"]
 
     frame = flags.get("frame", "3e")
     client_names = list(clients.keys())
@@ -568,6 +948,40 @@ def test_case(name, command, address, extra, flags, clients, expect_error, packe
     except Exception:
         pass
 
+    baseline_client = client_names[0] if client_names else None
+    live_case = {
+        "type": "LIVE_CASE",
+        "name": name,
+        "desc": desc,
+        "command": command,
+        "address": address,
+        "extra": [str(item) for item in extra],
+        "flags": {key: str(value) for key, value in flags.items()},
+        "expect_error": expect_error,
+        "replay_class": determine_live_replay_class(command, address, flags, expect_error),
+        "comparison_mode": determine_live_compare_mode(command, address, flags, expect_error),
+        "baseline_client": baseline_client,
+        "clients": {
+            client_name: {
+                "status": results[client_name].get("status"),
+                "message": results[client_name].get("message"),
+                "requests": [normalize_packet(pkt, frame) for pkt in reqs_by_client.get(client_name, [])],
+                "responses": [normalize_response(pkt) for pkt in resps_by_client.get(client_name, [])],
+                "response_end_codes": [parse_response_end_code(pkt) for pkt in resps_by_client.get(client_name, [])],
+                "response_data_lengths": [response_data_length(pkt) for pkt in resps_by_client.get(client_name, [])],
+            }
+            for client_name in client_names
+        },
+    }
+    if baseline_client:
+        live_case["baseline_requests"] = live_case["clients"][baseline_client]["requests"]
+        live_case["baseline_responses"] = live_case["clients"][baseline_client]["responses"]
+        live_case["baseline_response_end_codes"] = live_case["clients"][baseline_client]["response_end_codes"]
+        live_case["baseline_response_data_lengths"] = live_case["clients"][baseline_client]["response_data_lengths"]
+    if meta.get("live_profiles"):
+        live_case["live_profiles"] = meta["live_profiles"]
+    write_live_case(live_case)
+
     if all_ok:
         status_tag = "OK (NG)" if expect_error else "OK"
         log_print(f"  {status_tag}", log_fp)
@@ -585,6 +999,7 @@ def main():
     # Clear both logs so line counting and marker pairing are fresh
     open(packets_json, "w").close()
     open(markers_json, "w").close()
+    open(LIVE_CASES_FILE, "w").close()
 
     server_log_path = f"{logs_dir}/server_{ts}.log"
     server_log_fp = open(server_log_path, "w", encoding="utf-8")
@@ -606,9 +1021,9 @@ def main():
             log_print(f"Starting comprehensive verification ({len(TESTS)} tests)...\n", log_fp)
 
             for t in TESTS:
-                name, cmd, addr, extra, flags, clients, expect_error = t
+                name, cmd, addr, extra, flags, clients, expect_error, meta = t
                 prev = prev_results.get(name)
-                ok = test_case(name, cmd, addr, extra, flags, clients, expect_error, packets_json, log_fp, prev_result=prev)
+                ok = test_case(name, cmd, addr, extra, flags, clients, expect_error, meta, packets_json, log_fp, prev_result=prev)
                 if ok:
                     passed += 1
                     current_results[name] = "OK(NG)" if expect_error else "OK"
@@ -636,5 +1051,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

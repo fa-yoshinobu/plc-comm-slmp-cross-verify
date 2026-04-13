@@ -47,6 +47,12 @@ These cases are used to confirm consistent error propagation across languages.
   Previous normalized test outcomes used for regression comparison.
 - `response_history.json`
   Interactive replay history used by `slmp_interactive_sender.py`.
+- `latest_live_cases.jsonl`
+  Per-test replay traces and expected mock responses for `slmp_live_verify.py`.
+- `latest_live_verify.json`
+  Latest automated live-replay report.
+- `latest_live_verify.md`
+  Markdown summary of the latest automated live-replay report.
 
 ## JSONL Entry Shapes
 
@@ -80,6 +86,41 @@ Each line is one per-test result marker:
 `slmp_interactive_sender.py` uses `n_clients` to group the corresponding REQ
 packets from `latest_packets.jsonl`.
 
+### `latest_live_cases.jsonl`
+
+Each line stores one replayable verification case:
+
+```json
+{
+  "type": "LIVE_CASE",
+  "name": "3E QL D Word Read 3pts",
+  "comparison_mode": "exact",
+  "replay_class": "stateful",
+  "baseline_client": "python",
+  "baseline_requests": ["5000..."],
+  "baseline_responses": ["d000..."],
+  "live_profiles": {
+    "r120pcpu_tcp1025": {
+      "comparison_mode": "end_code",
+      "end_codes": [49244],
+      "note": "target-specific override"
+    }
+  },
+  "clients": {
+    "python": {
+      "requests": ["5000..."],
+      "responses": ["d000..."]
+    }
+  }
+}
+```
+
+`slmp_live_verify.py` uses this file to replay the suite against a real PLC
+and compare the normalized responses with the latest mock-run expectations.
+When `live_profiles` is present, `--profile <name>` can override the baseline
+comparison mode or expected responses for a validated PLC profile without
+changing the mock parity baseline.
+
 ## Interactive Replay Tool
 
 `slmp_interactive_sender.py`:
@@ -89,3 +130,16 @@ packets from `latest_packets.jsonl`.
 - sends one selected request or a full batch to a real PLC
 - normalizes 4E response serial bytes before history comparison
 - reports response changes against `response_history.json`
+
+## Automated Live Verification
+
+`slmp_live_verify.py`:
+
+- loads `latest_live_cases.jsonl`
+- replays the canonical request sequence of each case, or each client trace
+- compares live responses with the saved mock expectations using:
+  - `exact`
+  - `shape`
+  - `end_code`
+- can apply per-profile overrides from `latest_live_cases.jsonl` via `--profile`
+- writes machine-readable and Markdown reports under `logs/`

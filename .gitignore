@@ -16,11 +16,13 @@ obj/
 *.exe
 *.o
 *.obj
+clients/cpp/cpp_verify_client
 
 # Logs & Temp
 logs/*.json
 logs/*.jsonl
 logs/*.log
+logs/*.md
 !logs/latest.json
 server_output.tmp
 packet_log.json

@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <chrono>
 #include <cstring>
+#include <memory>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -99,7 +100,18 @@ public:
     }
     size_t write(const uint8_t* d, size_t l) override { return writeAll(d, l) ? l : 0; }
     size_t read(uint8_t* d, size_t l) override { if (!connected_) return 0; int r = ::recv(socket_, (char*)d, (int)l, 0); return r > 0 ? (size_t)r : 0; }
-    size_t available() override { if (!connected_) return 0; u_long a = 0; ioctlsocket(socket_, FIONREAD, &a); return (size_t)a; }
+    size_t available() override {
+        if (!connected_) return 0;
+#ifdef _WIN32
+        u_long a = 0;
+        ioctlsocket(socket_, FIONREAD, &a);
+        return (size_t)a;
+#else
+        int a = 0;
+        if (ioctl(socket_, FIONREAD, &a) != 0) return 0;
+        return a > 0 ? (size_t)a : 0;
+#endif
+    }
 private:
     bool waitReadable(uint32_t ms) const {
         fd_set rs; FD_ZERO(&rs); FD_SET(socket_, &rs);

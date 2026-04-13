@@ -5,7 +5,7 @@ Python, .NET, C++, and Node-RED SLMP libraries.
 
 ## Scope
 
-The current suite in `verify.py` contains 143 tests. It covers:
+The current suite in `verify.py` contains 140 tests. It covers:
 
 - binary 3E and 4E frames
 - Q/L and iQ-R word and bit access
@@ -34,6 +34,9 @@ The current suite in `verify.py` contains 143 tests. It covers:
   the current `node-red-contrib-plc-comm-slmp` scope.
 - `slmp_interactive_sender.py`
   Interactive replay tool for sending captured request packets to a real PLC.
+- `slmp_live_verify.py`
+  Automated live replay checker that compares real-PLC responses against the
+  latest mock-run expectations.
 - `logs/`
   Packet logs, test markers, console logs, and replay history.
 
@@ -71,6 +74,52 @@ python slmp_interactive_sender.py
 
 The replay tool loads `latest_packets.jsonl` and `latest_markers.jsonl`,
 groups packets by test case, and can resend one test or a full batch to a PLC.
+
+### 4. Verify live PLC responses against mock expectations
+
+Run `verify.py` first so `logs/latest_live_cases.jsonl` exists, then:
+
+```bash
+python slmp_live_verify.py --ip 192.168.0.10 --port 5000 --include-stateful --include-remote
+```
+
+For the validated `R120PCPU` TCP target that has known target-dependent
+responses for `SW`, `J1\\SW`, mixed `1406`, `1005`, and oversize NG codes:
+
+```bash
+python slmp_live_verify.py --ip 192.168.250.100 --port 1025 --profile r120pcpu_tcp1025 --include-stateful --include-remote
+```
+
+Useful options:
+
+- `--mode baseline`
+  Replay one canonical request sequence per test case.
+- `--mode all-clients`
+  Replay each client trace separately.
+- `--profile r120pcpu_tcp1025`
+  Apply the live-profile overrides encoded in `verify.py` for the validated
+  `R120PCPU` TCP path while keeping mock parity expectations unchanged.
+- `--include-stateful`
+  Include write/read sequences that depend on suite ordering.
+- `--include-remote`
+  Include remote RUN/STOP/PAUSE/LATCH-CLEAR/RESET commands.
+- `--case-pattern "Type Name"`
+  Run only matching cases.
+
+The live verifier writes:
+
+- `logs/latest_live_verify.json`
+- `logs/latest_live_verify.md`
+
+## CI
+
+- `.github/workflows/ci.yml`
+  Runs the mock baseline suite on `push`, `pull_request`, and manual dispatch.
+  This is the gate that should remain required for merges.
+- `.github/workflows/live-r120-profile.yml`
+  Manual `workflow_dispatch` job for the validated `R120PCPU` TCP path.
+  This job is intended for a `self-hosted` Linux runner that can reach the PLC
+  network and runs `slmp_live_verify.py --profile r120pcpu_tcp1025`.
 
 ## Response History
 
