@@ -659,6 +659,15 @@ int main(int argc, char** argv) {
                 if (client.writeRandomBits(bDevs.data(),bValArr.get(),bDevs.size())==slmp::Error::Ok) jsonOk();
                 else jsonErr(std::to_string((int)client.lastError()));
             }
+            else if (cmd == "monitor-register") {
+                auto wDevList = splitStr(wordDevs, ',');
+                auto dwDevList = splitStr(dwordDevs, ',');
+                std::vector<slmp::DeviceAddress> wDevs, dwDevs;
+                for (auto& s : wDevList) if (!s.empty()) wDevs.push_back(parseDevice(s));
+                for (auto& s : dwDevList) if (!s.empty()) dwDevs.push_back(parseDevice(s));
+                if (client.registerMonitorDevices(wDevs.data(), wDevs.size(), dwDevs.data(), dwDevs.size()) == slmp::Error::Ok) jsonOk();
+                else jsonErr(std::to_string((int)client.lastError()));
+            }
             else if (cmd == "block-read") {
                 auto wPairs = parseDevCountPairs(wordBlocksStr);
                 auto bPairs = parseDevCountPairs(bitBlocksStr);
