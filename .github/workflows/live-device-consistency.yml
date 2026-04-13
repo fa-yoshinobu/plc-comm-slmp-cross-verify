@@ -1,19 +1,43 @@
-name: CI
+name: Live Device Consistency
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
   workflow_dispatch:
+    inputs:
+      plc_ip:
+        description: PLC IP address
+        required: true
+        default: 192.168.250.100
+      plc_port:
+        description: PLC TCP port
+        required: true
+        default: "1025"
+      profile:
+        description: Device consistency profile
+        required: true
+        default: r120pcpu_tcp1025
+      clients:
+        description: Comma-separated client list or all
+        required: true
+        default: all
+      devices:
+        description: Optional comma-separated device subset
+        required: false
+        default: ""
+      restore_after:
+        description: Restore the original value after each write test
+        required: true
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
 jobs:
-  mock-baseline:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+  live-device-consistency:
+    runs-on:
+      - self-hosted
+      - linux
+    timeout-minutes: 60
 
     steps:
       - name: Checkout cross-verify
@@ -94,14 +118,31 @@ jobs:
           ../plc-comm-slmp-cpp-minimal/src/slmp_high_level.cpp
           -o clients/cpp/cpp_verify_client
 
-      - name: Run mock baseline parity suite
-        run: python verify.py
+      - name: Run live device consistency verification
+        run: |
+          args=(
+            python device_command_consistency.py
+            --host "${{ inputs.plc_ip }}"
+            --port "${{ inputs.plc_port }}"
+            --profile "${{ inputs.profile }}"
+            --clients "${{ inputs.clients }}"
+          )
+          if [[ -n "${{ inputs.devices }}" ]]; then
+            args+=(--devices "${{ inputs.devices }}")
+          fi
+          if [[ "${{ inputs.restore_after }}" == "true" ]]; then
+            args+=(--restore-after)
+          else
+            args+=(--no-restore-after)
+          fi
+          "${args[@]}"
 
-      - name: Upload verification logs
+      - name: Upload device consistency logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mock-baseline-logs
+          name: live-device-consistency-logs
           path: |
-            logs/
+            logs/latest_device_consistency.json
+            logs/latest_device_consistency.md
           if-no-files-found: ignore

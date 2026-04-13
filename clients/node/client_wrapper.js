@@ -159,6 +159,112 @@ function parseDevValuesPairs(text) {
     });
 }
 
+function parseQualifiedDevice(text) {
+  const token = String(text || "").trim().toUpperCase();
+  let match = /^J(\d+)[\\/](.+)$/.exec(token);
+  if (match) {
+    return {
+      device: slmp.parseDevice(match[2]),
+      extensionSpecification: Number.parseInt(match[1], 10),
+      directMemorySpecification: 0xf9,
+    };
+  }
+
+  match = /^U([0-9A-F]+)[\\/](.+)$/.exec(token);
+  if (!match) {
+    return {
+      device: slmp.parseDevice(token),
+      extensionSpecification: null,
+      directMemorySpecification: 0x00,
+    };
+  }
+
+  const device = slmp.parseDevice(match[2]);
+  let directMemorySpecification = 0x00;
+  if (device.code === "G") {
+    directMemorySpecification = 0xf8;
+  } else if (device.code === "HG") {
+    directMemorySpecification = 0xfa;
+  }
+
+  return {
+    device,
+    extensionSpecification: Number.parseInt(match[1], 16),
+    directMemorySpecification,
+  };
+}
+
+function numberToBuffer(value, size) {
+  const buffer = Buffer.alloc(size);
+  if (size === 2) {
+    buffer.writeUInt16LE(Number(value) & 0xffff, 0);
+    return buffer;
+  }
+  if (size === 4) {
+    buffer.writeUInt32LE(Number(value) >>> 0, 0);
+    return buffer;
+  }
+  throw new Error(`unsupported integer size: ${size}`);
+}
+
+function packBitValues(values) {
+  const bytes = [];
+  for (let index = 0; index < values.length; index += 2) {
+    const high = values[index] ? 0x10 : 0x00;
+    const low = index + 1 < values.length && values[index + 1] ? 0x01 : 0x00;
+    bytes.push(high | low);
+  }
+  return Buffer.from(bytes);
+}
+
+function encodeExtendedDeviceSpec(deviceText, series) {
+  const qualified = parseQualifiedDevice(deviceText);
+  const info = slmp.DEVICE_CODES[qualified.device.code];
+  if (!info) {
+    throw new Error(`Unknown SLMP device code '${qualified.device.code}'`);
+  }
+
+  if (qualified.directMemorySpecification === 0xf9) {
+    const buffer = Buffer.alloc(11);
+    buffer.writeUIntLE(Number(qualified.device.number) & 0xffffff, 2, 3);
+    buffer.writeUInt8(info.code & 0xff, 5);
+    buffer.writeUInt8(Number(qualified.extensionSpecification) & 0xff, 8);
+    buffer.writeUInt8(0xf9, 10);
+    return buffer;
+  }
+
+  const extensionSpecification = Number(qualified.extensionSpecification || 0) & 0xffff;
+  const deviceSpec = slmp.encodeDeviceSpec(qualified.device, { series });
+  const dm = Number(qualified.directMemorySpecification || 0) & 0xff;
+  const captureAligned =
+    (qualified.device.code === "G" || qualified.device.code === "HG") && (dm === 0xf8 || dm === 0xfa);
+
+  if (captureAligned) {
+    return Buffer.concat([
+      Buffer.from([0x00, 0x00]),
+      deviceSpec,
+      Buffer.from([0x00, 0x00]),
+      numberToBuffer(extensionSpecification, 2),
+      Buffer.from([dm]),
+    ]);
+  }
+
+  return Buffer.concat([
+    numberToBuffer(extensionSpecification, 2),
+    Buffer.from([0x00, 0x00, 0x00]),
+    deviceSpec,
+    Buffer.from([dm]),
+  ]);
+}
+
+function resolveExtendedSubcommand(deviceText, series, bitUnit) {
+  const qualified = parseQualifiedDevice(deviceText);
+  if (qualified.directMemorySpecification === 0xf9) {
+    return bitUnit ? 0x0081 : 0x0080;
+  }
+  return slmp.resolveDeviceSubcommand({ bitUnit, series, extension: true });
+}
+
 function encodeDwordWords(value, mode) {
   const buffer = Buffer.alloc(4);
   if (mode === "float") {
@@ -305,6 +411,46 @@ async function main() {
       };
     } else if (args.command === "write-named") {
       await slmp.writeNamed(client, parseNamedUpdates(args.address));
+      result = { status: "success" };
+    } else if (args.command === "read-ext") {
+      const count = args.extra.length > 0 ? Number.parseInt(args.extra[0], 10) : 1;
+      const bitUnit = args.mode === "bit";
+      const payload = Buffer.concat([
+        encodeExtendedDeviceSpec(args.address, args.series),
+        numberToBuffer(count, 2),
+      ]);
+      const response = await client.request(
+        slmp.Command.DEVICE_READ,
+        resolveExtendedSubcommand(args.address, args.series, bitUnit),
+        payload,
+        { series: args.series }
+      );
+      if (bitUnit) {
+        result = {
+          status: "success",
+          values: slmp.unpackBitValues(response.data, count).map((value) => (value ? 1 : 0)),
+        };
+      } else {
+        const words = slmp.decodeDeviceWords(response.data);
+        result = { status: "success", values: words };
+      }
+    } else if (args.command === "write-ext") {
+      const bitUnit = args.mode === "bit";
+      const payloadParts = [
+        encodeExtendedDeviceSpec(args.address, args.series),
+        numberToBuffer(args.extra.length, 2),
+      ];
+      if (bitUnit) {
+        payloadParts.push(packBitValues(args.extra.map((value) => value === "1")));
+      } else {
+        args.extra.forEach((value) => payloadParts.push(numberToBuffer(Number.parseInt(value, 10), 2)));
+      }
+      await client.request(
+        slmp.Command.DEVICE_WRITE,
+        resolveExtendedSubcommand(args.address, args.series, bitUnit),
+        Buffer.concat(payloadParts),
+        { series: args.series }
+      );
       result = { status: "success" };
     } else {
       result = { status: "error", message: `unsupported command: ${args.command}` };

@@ -59,6 +59,12 @@ jobs:
           repository: fa-yoshinobu/node-red-contrib-plc-comm-slmp
           path: _deps/node-red-contrib-plc-comm-slmp
 
+      - name: Checkout Rust dependency
+        uses: actions/checkout@v4
+        with:
+          repository: fa-yoshinobu/plc-comm-slmp-rust
+          path: _deps/plc-comm-slmp-rust
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -68,6 +74,9 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "9.0.x"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -87,6 +96,7 @@ jobs:
           ln -sfn "$GITHUB_WORKSPACE/_deps/plc-comm-slmp-dotnet" "$parent/plc-comm-slmp-dotnet"
           ln -sfn "$GITHUB_WORKSPACE/_deps/plc-comm-slmp-cpp-minimal" "$parent/plc-comm-slmp-cpp-minimal"
           ln -sfn "$GITHUB_WORKSPACE/_deps/node-red-contrib-plc-comm-slmp" "$parent/node-red-contrib-plc-comm-slmp"
+          ln -sfn "$GITHUB_WORKSPACE/_deps/plc-comm-slmp-rust" "$parent/plc-comm-slmp-rust"
 
       - name: Build .NET wrapper
         run: dotnet build clients/dotnet/SlmpVerifyClient/SlmpVerifyClient.csproj -c Debug

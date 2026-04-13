@@ -1,0 +1,123 @@
+{
+  "name": "r120pcpu_tcp1025",
+  "description": "Live device consistency profile for 4E/iQR against the R120CPU target on TCP port 1025.",
+  "defaults": {
+    "frame": "4e",
+    "series": "iqr",
+    "retries": 6,
+    "retry_delay_ms": 500,
+    "command_delay_ms": 100,
+    "settle_delay_ms": 200,
+    "restore_after": true
+  },
+  "groups": [
+    {
+      "kind": "bit",
+      "addresses": [
+        "STS10",
+        "STC10",
+        "TS10",
+        "TC10",
+        "CS10",
+        "CC10",
+        "SB10",
+        "DX10",
+        "DY10",
+        "X10",
+        "Y10",
+        "M10",
+        "L10",
+        "F100",
+        "V10",
+        "B10",
+        "SM10"
+      ],
+      "read_paths": ["direct-bit", "named"],
+      "write_paths": ["direct-bit", "random-bit", "named"],
+      "restore_path": "direct-bit",
+      "restore_policy": "strict"
+    },
+    {
+      "kind": "word",
+      "addresses": [
+        "STN10",
+        "TN10",
+        "CN10",
+        "SW10",
+        "ZR10",
+        "D10",
+        "W10",
+        "Z10",
+        "R10",
+        "SD10",
+        "RD10"
+      ],
+      "volatile_addresses": ["STN10", "TN10", "CN10", "SD10", "RD10"],
+      "read_paths": ["direct-word", "named-word", "random-word"],
+      "write_paths": ["direct-word", "random-word", "named-word"],
+      "restore_path": "direct-word",
+      "restore_policy": "strict",
+      "volatile_restore_policy": "best-effort"
+    },
+    {
+      "kind": "long-state-bit",
+      "addresses": ["LTS10", "LTC10", "LSTS10", "LSTC10"],
+      "read_paths": ["named", "base-block4"],
+      "write_paths": ["named"],
+      "restore_path": "named",
+      "restore_policy": "strict"
+    },
+    {
+      "kind": "long-counter-ro",
+      "addresses": ["LCS10", "LCC10"],
+      "read_only": true,
+      "read_paths": ["named", "base-block4"],
+      "write_paths": [],
+      "restore_path": null,
+      "restore_policy": "skip"
+    },
+    {
+      "kind": "long-current",
+      "items": [
+        {"address": "LTN10", "named_address": "LTN10:D"},
+        {"address": "LSTN10", "named_address": "LSTN10:D"}
+      ],
+      "read_paths": ["named-dword", "base-block4"],
+      "write_paths": ["random-dword", "named-dword"],
+      "restore_path": "named-dword",
+      "restore_policy": "strict"
+    },
+    {
+      "kind": "dword",
+      "items": [
+        {"address": "LCN10", "named_address": "LCN10:D", "word_count": 4},
+        {"address": "LZ0", "named_address": "LZ0:D", "word_count": 2},
+        {"address": "LZ1", "named_address": "LZ1:D", "word_count": 2}
+      ],
+      "volatile_addresses": ["LCN10", "LZ0", "LZ1"],
+      "read_paths": ["direct-dword", "named-dword", "random-dword", "raw-words-low-dword"],
+      "write_paths": ["direct-dword", "random-dword", "named-dword"],
+      "restore_path": "direct-dword",
+      "restore_policy": "strict",
+      "volatile_restore_policy": "best-effort"
+    },
+    {
+      "kind": "ext-bit",
+      "addresses": ["J1\\X10", "J1\\Y10", "J1\\B10", "J1\\SB10"],
+      "volatile_addresses": ["J1\\X10"],
+      "read_paths": ["read-ext"],
+      "write_paths": ["write-ext"],
+      "restore_path": "write-ext",
+      "restore_policy": "strict",
+      "volatile_restore_policy": "best-effort"
+    },
+    {
+      "kind": "ext-word",
+      "addresses": ["J1\\W10", "J1\\SW10"],
+      "read_paths": ["read-ext"],
+      "write_paths": ["write-ext"],
+      "restore_path": "write-ext",
+      "restore_policy": "strict"
+    }
+  ]
+}

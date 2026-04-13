@@ -24,6 +24,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__)).replace("\\", "/")
 PREV_RESULTS_FILE = f"{ROOT}/logs/prev_results.json"
 LIVE_CASES_FILE = f"{ROOT}/logs/latest_live_cases.jsonl"
 EXPECTED_RESPONSES_FILE = f"{ROOT}/specs/expected_responses/live_profiles.json"
+UNSUPPORTED_PATHS_FILE = f"{ROOT}/specs/shared/unsupported_path_vectors.json"
 
 
 def _resolve_dotnet_client():
@@ -113,6 +114,40 @@ def merge_case_meta(name, inline_meta):
     if isinstance(file_meta, dict):
         merged.update(file_meta)
     return merged
+
+
+def resolve_case_clients(value):
+    if value in (None, "all"):
+        return CLIENTS
+    if value == "no-cpp":
+        return CLIENTS_NO_CPP
+    if isinstance(value, list):
+        return {name: CLIENTS[name] for name in value}
+    raise ValueError(f"unsupported clients selector: {value!r}")
+
+
+def load_unsupported_path_tests(path=UNSUPPORTED_PATHS_FILE):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception:
+        return []
+
+    tests = []
+    for item in payload.get("cases", []):
+        tests.append(
+            _t(
+                item["name"],
+                item["command"],
+                item.get("address", ""),
+                item.get("extra") or [],
+                item.get("flags") or {},
+                resolve_case_clients(item.get("clients")),
+                bool(item.get("expect_error", True)),
+                meta=item.get("meta"),
+            )
+        )
+    return tests
 
 
 WALK_FLAGS_4E_IQR = {"frame": "4e", "series": "iqr"}
@@ -497,18 +532,11 @@ TESTS = [
     _t("4E J1\\SW0  Ext Word Read  2pts",    "read-ext",  "J1\\SW0",  [2],         {"frame": "4e"}),
 
     # ===== Error / NG Conditions =====
-    _t("NG 4E iQR Guard LTC Direct Bit Read", "read", "LTC10", [1], {"frame": "4e", "series": "iqr", "mode": "bit"}, CLIENTS, True),
-    _t("NG 4E iQR Guard LSTC Direct Bit Read", "read", "LSTC10", [1], {"frame": "4e", "series": "iqr", "mode": "bit"}, CLIENTS, True),
-    _t("NG 4E iQR Guard LTN Direct Word Read 2pts", "read", "LTN10", [2], {"frame": "4e", "series": "iqr"}, CLIENTS, True),
-    _t("NG 4E iQR Guard LSTN Direct DWord Read", "read", "LSTN10", [1], {"frame": "4e", "series": "iqr", "mode": "dword"}, CLIENTS, True),
-    _t("NG 4E iQR Guard LCS Random Read", "random-read", "", [], {"frame": "4e", "series": "iqr", "word-devs": "LCS10"}, CLIENTS, True),
-    _t("NG 4E iQR Guard LCS Block Read", "block-read", "", [], {"frame": "4e", "series": "iqr", "bit-blocks": "LCS10=1"}, CLIENTS, True),
-    _t("NG 4E iQR Guard LCC Block Write", "block-write", "", [], {"frame": "4e", "series": "iqr", "bit-blocks": "LCC10=1"}, CLIENTS, True),
-    _t("NG 4E iQR Guard LCS Monitor Register", "monitor-register", "", [], {"frame": "4e", "series": "iqr", "word-devs": "LCS10"}, CLIENTS, True),
     _t("NG 3E Data Length Over 1001pts",      "read", "D0", [1001], {},           CLIENTS, True),
     _t("NG 4E Data Length Over 1001pts",      "read", "D0", [1001], {"frame": "4e"}, CLIENTS, True),
 ]
 
+TESTS.extend(load_unsupported_path_tests())
 TESTS.extend(build_automated_device_walk_cases())
 
 
@@ -527,7 +555,7 @@ def parse_args():
     parser.add_argument(
         "--clients",
         default="all",
-        help="Comma-separated clients to run: all, python, dotnet, cpp, node-red",
+        help="Comma-separated clients to run: all, python, dotnet, cpp, node-red, rust",
     )
     parser.add_argument(
         "--case-pattern",
@@ -716,6 +744,8 @@ def node_red_supports(command, _address, _extra, _flags):
     return command in {
         "read",
         "write",
+        "read-ext",
+        "write-ext",
         "read-type",
         "random-read",
         "random-write-words",
