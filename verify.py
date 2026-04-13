@@ -1,6 +1,6 @@
 """Comprehensive SLMP cross-language verification tool.
 
-Runs the tests defined below across the Python, .NET, and C++ wrappers.
+Runs the tests defined below across the Python, .NET, C++, Node-RED, and Rust wrappers.
 Checks:
   1. Status parity (all clients succeed/fail on the same test)
   2. Request packet parity (all clients send identical bytes, except 4E serial)
@@ -36,17 +36,30 @@ def _resolve_cpp_client():
     native = f"{ROOT}/clients/cpp/cpp_verify_client"
     return [exe] if os.path.exists(exe) else [native]
 
+
+def _resolve_rust_client():
+    native = f"{ROOT}/../plc-comm-slmp-rust/target/debug/slmp_verify_client"
+    exe = f"{ROOT}/../plc-comm-slmp-rust/target/debug/slmp_verify_client.exe"
+    manifest = f"{ROOT}/../plc-comm-slmp-rust/Cargo.toml"
+    if os.path.exists(exe):
+        return [exe]
+    if os.path.exists(native):
+        return [native]
+    return ["cargo", "run", "--quiet", "--manifest-path", manifest, "--bin", "slmp_verify_client", "--"]
+
 CLIENTS = {
     "python": ["python", f"{ROOT}/clients/python/client_wrapper.py"],
     "dotnet": _resolve_dotnet_client(),
     "cpp":    _resolve_cpp_client(),
     "node-red": ["node", f"{ROOT}/clients/node/client_wrapper.js"],
+    "rust": _resolve_rust_client(),
 }
 CLIENT_ORDER = tuple(CLIENTS.keys())
 CLIENT_ALIASES = {
     "python": "python",
     "dotnet": "dotnet",
     "cpp": "cpp",
+    "rust": "rust",
     "node": "node-red",
     "node-red": "node-red",
     "nodered": "node-red",
@@ -56,7 +69,7 @@ HOST = "127.0.0.1"
 PORT = 9000
 
 # Python + .NET only (C++ lacks readBitsModuleBuf support)
-CLIENTS_NO_CPP = {k: CLIENTS[k] for k in ("python", "dotnet", "node-red")}
+CLIENTS_NO_CPP = {k: CLIENTS[k] for k in ("python", "dotnet", "node-red", "rust")}
 
 
 # ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 # SLMP Cross-Verify
 
 `plc-comm-slmp-cross-verify` is the canonical cross-library verification repo
-for the Python, .NET, C++, and Node-RED SLMP implementations.
+for the Python, .NET, C++, Node-RED, and Rust SLMP implementations.
 
 This repo has three jobs:
 
@@ -31,6 +31,8 @@ This repo has three jobs:
   `dotnet build clients/dotnet/SlmpVerifyClient/SlmpVerifyClient.csproj -c Debug`
 - C++
   `g++ -I ../plc-comm-slmp-cpp-minimal/src clients/cpp/main.cpp ../plc-comm-slmp-cpp-minimal/src/slmp_minimal.cpp ../plc-comm-slmp-cpp-minimal/src/slmp_high_level.cpp -o clients/cpp/cpp_verify_client.exe -lws2_32`
+- Rust
+  `cargo build --manifest-path ../plc-comm-slmp-rust/Cargo.toml --bin slmp_verify_client`
 
 ### List runnable cases
 
@@ -101,7 +103,7 @@ python slmp_live_verify.py --ip 192.168.250.100 --port 1025 --profile r120pcpu_t
 - `server/mock_server.py`
   Mock SLMP 3E/4E binary server used by `verify.py`.
 - `clients/`
-  Wrapper CLIs for Python, .NET, C++, and Node-RED.
+  Wrapper CLIs for Python, .NET, C++, Node-RED, and Rust.
 - `specs/shared/`
   Canonical shared JSON vectors for device encoding, address parsing, address
   normalization, and golden request frames.
