@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-04-13
+
 ### Changed
 - Simplified the documentation set so `README.md` is the entry point, `SPEC_AND_LOG_FORMAT.md` keeps artifact details, and duplicate status/TODO documents were removed.
 - `verify.py` now supports filtered single-client debug runs through `--clients`, `--case-pattern`, and `--list-cases` without requiring a separate verification tool.
