@@ -7,10 +7,11 @@ import sys
 if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-ROOT = "D:/PLC_COMM_PROJ/plc-comm-slmp-cross-verify"
+ROOT = os.path.dirname(os.path.abspath(__file__)).replace("\\", "/")
 PACKETS_LOG       = f"{ROOT}/logs/latest_packets.jsonl"
 MARKERS_LOG       = f"{ROOT}/logs/latest_markers.jsonl"
 RESPONSE_HIST_FILE = f"{ROOT}/logs/response_history.json"
+LIVE_CASES_FILE    = f"{ROOT}/logs/latest_live_cases.jsonl"
 
 COMMAND_NAMES = {
     0x0401: "DeviceRead",   0x1401: "DeviceWrite",
@@ -112,6 +113,29 @@ def _parse_device_detail(b, pay_off, cmd, sub):
 # ---------------------------------------------------------------------------
 def load_tests():
     """Return list of test dicts: {packets, name, result, desc}."""
+    if os.path.exists(LIVE_CASES_FILE):
+        tests = []
+        with open(LIVE_CASES_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    e = json.loads(line)
+                    if e.get("type") != "LIVE_CASE":
+                        continue
+                    packets = e.get("baseline_requests") or []
+                    tests.append({
+                        "packets": packets,
+                        "name": e.get("name"),
+                        "result": None,
+                        "desc": e.get("desc", ""),
+                    })
+                except Exception:
+                    pass
+        if tests:
+            return tests
+
     # Load REQ packets from packet log
     reqs = []
     if os.path.exists(PACKETS_LOG):
@@ -253,6 +277,8 @@ def save_response_history(history):
 
 def normalize_response(resp_hex):
     """Zero out 4E serial/reserved bytes (offsets 2-5) for stable comparison."""
+    if isinstance(resp_hex, list):
+        return [normalize_response(item) for item in resp_hex]
     try:
         b = bytearray(bytes.fromhex(resp_hex))
         if b[0:2] == b"\xD4\x00":
@@ -272,6 +298,16 @@ def compare_and_record(key, resp_hex, history):
     if prev is None:
         return True, None
     return norm == prev, prev
+
+
+def send_case_packets(packets, ip, port):
+    responses = []
+    for pkt in packets:
+        resp, err = send_hex(ip, port, pkt)
+        if err:
+            return None, err
+        responses.append(resp)
+    return responses, None
 
 
 # ---------------------------------------------------------------------------
@@ -318,25 +354,27 @@ def batch_send(tests, indices, ip, port, history):
         print(f"\n  [{seq}/{total}] {name_str}")
         if desc_str:
             print(f"         {desc_str}")
-        print(f"    Send: {pkt}")
+        for packet_index, packet in enumerate(t["packets"], 1):
+            print(f"    Send[{packet_index}/{len(t['packets'])}]: {packet}")
 
-        resp, err = send_hex(ip, port, pkt)
+        responses, err = send_case_packets(t["packets"], ip, port)
         if err:
             print(f"    Recv: ERROR — {err}")
             errors += 1
             ng_items.append((idx, name_str, desc_str, f"通信エラー: {err}"))
         else:
-            end_code, ok = parse_end_code(resp)
+            last_resp = responses[-1]
+            end_code, ok = parse_end_code(last_resp)
             ec_str = f"  EndCode=0x{end_code:04X} {'(正常)' if ok else '(エラー)'}" if end_code is not None else ""
-            same, prev = compare_and_record(name_str, resp, history)
+            same, prev = compare_and_record(name_str, responses, history)
             diff_str = "  [初回]" if prev is None else ("  応答:同じ" if same else "  応答:変化")
-            print(f"    Recv: {resp}{ec_str}{diff_str}")
+            print(f"    Recv: {normalize_response(responses)}{ec_str}{diff_str}")
 
             reasons = []
             if end_code is not None and not ok:
                 reasons.append(f"EndCode=0x{end_code:04X}")
             if not same:
-                reasons.append(f"応答変化 前回:{prev[:24]}... 今回:{normalize_response(resp)[:24]}...")
+                reasons.append(f"応答変化 前回:{str(prev)[:24]}... 今回:{str(normalize_response(responses))[:24]}...")
             if reasons:
                 ng_items.append((idx, name_str, desc_str, " / ".join(reasons)))
 
@@ -431,17 +469,18 @@ def main():
                 if t.get("name"):
                     print(f"\n  テスト: {t['name']}")
                     print(f"  説明  : {t['desc']}")
-                pkt = t["packets"][0]
-                print(f"  Send  : {pkt}")
-                resp, err = send_hex(ip, port, pkt)
+                for packet_index, pkt in enumerate(t["packets"], 1):
+                    print(f"  Send[{packet_index}/{len(t['packets'])}] : {pkt}")
+                responses, err = send_case_packets(t["packets"], ip, port)
                 if err:
                     print(f"  ERROR : {err}")
                 else:
-                    ec, ok = parse_end_code(resp)
+                    last_resp = responses[-1]
+                    ec, ok = parse_end_code(last_resp)
                     name_key = t["name"] or f"[{idx}]"
-                    same, prev = compare_and_record(name_key, resp, history)
+                    same, prev = compare_and_record(name_key, responses, history)
                     save_response_history(history)
-                    print(f"  Recv  : {resp}")
+                    print(f"  Recv  : {normalize_response(responses)}")
                     if ec is not None:
                         print(f"  EndCode: 0x{ec:04X} {'(正常)' if ok else '(エラー)'}")
                     if prev is None:
@@ -451,7 +490,7 @@ def main():
                     else:
                         print(f"  応答比較: 変化あり")
                         print(f"    前回: {prev}")
-                        print(f"    今回: {normalize_response(resp)}")
+                        print(f"    今回: {normalize_response(responses)}")
                 input("Enter で続行...")
             else:
                 print("  番号が範囲外です。")

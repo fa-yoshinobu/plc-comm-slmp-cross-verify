@@ -1,0 +1,130 @@
+name: Live R120 Profile
+
+on:
+  workflow_dispatch:
+    inputs:
+      plc_ip:
+        description: PLC IP address
+        required: true
+        default: 192.168.250.100
+      plc_port:
+        description: PLC TCP port
+        required: true
+        default: "1025"
+      profile:
+        description: Live profile name
+        required: true
+        default: r120pcpu_tcp1025
+      include_remote:
+        description: Include remote RUN/STOP/PAUSE/LATCH-CLEAR/RESET
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  live-r120-profile:
+    runs-on:
+      - self-hosted
+      - linux
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout cross-verify
+        uses: actions/checkout@v4
+
+      - name: Checkout Python dependency
+        uses: actions/checkout@v4
+        with:
+          repository: fa-yoshinobu/plc-comm-slmp-python
+          path: _deps/plc-comm-slmp-python
+
+      - name: Checkout .NET dependency
+        uses: actions/checkout@v4
+        with:
+          repository: fa-yoshinobu/plc-comm-slmp-dotnet
+          path: _deps/plc-comm-slmp-dotnet
+
+      - name: Checkout C++ dependency
+        uses: actions/checkout@v4
+        with:
+          repository: fa-yoshinobu/plc-comm-slmp-cpp-minimal
+          path: _deps/plc-comm-slmp-cpp-minimal
+
+      - name: Checkout Node dependency
+        uses: actions/checkout@v4
+        with:
+          repository: fa-yoshinobu/node-red-contrib-plc-comm-slmp
+          path: _deps/node-red-contrib-plc-comm-slmp
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: _deps/node-red-contrib-plc-comm-slmp/package-lock.json
+
+      - name: Install Node dependency packages
+        working-directory: _deps/node-red-contrib-plc-comm-slmp
+        run: npm ci
+
+      - name: Expose sibling dependency paths
+        run: |
+          parent="$(dirname "$GITHUB_WORKSPACE")"
+          ln -sfn "$GITHUB_WORKSPACE/_deps/plc-comm-slmp-python" "$parent/plc-comm-slmp-python"
+          ln -sfn "$GITHUB_WORKSPACE/_deps/plc-comm-slmp-dotnet" "$parent/plc-comm-slmp-dotnet"
+          ln -sfn "$GITHUB_WORKSPACE/_deps/plc-comm-slmp-cpp-minimal" "$parent/plc-comm-slmp-cpp-minimal"
+          ln -sfn "$GITHUB_WORKSPACE/_deps/node-red-contrib-plc-comm-slmp" "$parent/node-red-contrib-plc-comm-slmp"
+
+      - name: Build .NET wrapper
+        run: dotnet build clients/dotnet/SlmpVerifyClient/SlmpVerifyClient.csproj -c Debug
+
+      - name: Build C++ wrapper
+        run: >
+          g++ -std=c++17 -Wall -Wextra
+          -I ../plc-comm-slmp-cpp-minimal/src
+          clients/cpp/main.cpp
+          ../plc-comm-slmp-cpp-minimal/src/slmp_minimal.cpp
+          ../plc-comm-slmp-cpp-minimal/src/slmp_high_level.cpp
+          -o clients/cpp/cpp_verify_client
+
+      - name: Rebuild mock baseline
+        run: python verify.py
+
+      - name: Run live R120 profile verification
+        run: |
+          args=(
+            python slmp_live_verify.py
+            --ip "${{ inputs.plc_ip }}"
+            --port "${{ inputs.plc_port }}"
+            --profile "${{ inputs.profile }}"
+            --include-stateful
+            --retries 4
+            --retry-delay-ms 500
+            --step-delay-ms 250
+          )
+          if [[ "${{ inputs.include_remote }}" == "true" ]]; then
+            args+=(--include-remote)
+          fi
+          "${args[@]}"
+
+      - name: Upload live verification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-r120-profile-logs
+          path: |
+            logs/
+          if-no-files-found: ignore

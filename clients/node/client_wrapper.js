@@ -19,6 +19,9 @@ function parseArgs(argv) {
     dwordDevs: "",
     words: "",
     dwords: "",
+    bits: "",
+    wordBlocks: "",
+    bitBlocks: "",
   };
 
   for (let index = 4; index < argv.length; index += 1) {
@@ -53,6 +56,18 @@ function parseArgs(argv) {
     }
     if (token === "--dwords") {
       args.dwords = argv[++index];
+      continue;
+    }
+    if (token === "--bits") {
+      args.bits = argv[++index];
+      continue;
+    }
+    if (token === "--word-blocks") {
+      args.wordBlocks = argv[++index];
+      continue;
+    }
+    if (token === "--bit-blocks") {
+      args.bitBlocks = argv[++index];
       continue;
     }
     args.extra.push(token);
@@ -119,6 +134,28 @@ function parseKvPairs(text) {
     .map((item) => {
       const parts = item.split("=", 2);
       return [parts[0].trim(), Number.parseInt(parts[1].trim(), 10)];
+    });
+}
+
+function parseDevCountPairs(text) {
+  return String(text || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => {
+      const parts = item.split("=", 2);
+      return [parts[0].trim(), Number.parseInt(parts[1].trim(), 10)];
+    });
+}
+
+function parseDevValuesPairs(text) {
+  return String(text || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => {
+      const parts = item.split("=", 2);
+      return [parts[0].trim(), parts[1].split(":").map((value) => Number.parseInt(value.trim(), 10))];
     });
 }
 
@@ -225,6 +262,28 @@ async function main() {
       await client.writeRandomWords({
         wordValues: parseKvPairs(args.words),
         dwordValues: parseKvPairs(args.dwords),
+      });
+      result = { status: "success" };
+    } else if (args.command === "random-write-bits") {
+      await client.writeRandomBits({
+        bitValues: parseKvPairs(args.bits).map(([device, value]) => [device, Boolean(value)]),
+      });
+      result = { status: "success" };
+    } else if (args.command === "block-read") {
+      const wordBlocks = parseDevCountPairs(args.wordBlocks);
+      const bitBlocks = parseDevCountPairs(args.bitBlocks);
+      const values = await client.readBlock({ wordBlocks, bitBlocks });
+      result = {
+        status: "success",
+        word_values: values.wordValues,
+        bit_values: values.bitWordValues,
+        word_blocks: values.wordBlocks.map((block) => [block.device, block.values]),
+        bit_blocks: values.bitBlocks.map((block) => [block.device, block.values]),
+      };
+    } else if (args.command === "block-write") {
+      await client.writeBlock({
+        wordBlocks: parseDevValuesPairs(args.wordBlocks),
+        bitBlocks: parseDevValuesPairs(args.bitBlocks),
       });
       result = { status: "success" };
     } else if (args.command === "read-named" || args.command === "poll-once") {
