@@ -11,6 +11,7 @@ import sys
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DEVICE_CONSISTENCY_DIR = os.path.join(ROOT, "specs", "device_consistency")
 UNSUPPORTED_PATHS_FILE = os.path.join(ROOT, "specs", "shared", "unsupported_path_vectors.json")
+LIVE_PROFILES_FILE = os.path.join(ROOT, "specs", "expected_responses", "live_profiles.json")
 
 
 def fail(message: str):
@@ -136,6 +137,58 @@ def validate_unsupported_paths(path: str):
             fail(f"{case_path}.expect_error: expected boolean")
 
 
+def validate_live_profiles(path: str):
+    payload = load_json(path)
+    expect_type(payload, dict, path)
+    expect_keys(payload, ["cases"], path)
+    expect_type(payload["cases"], dict, f"{path}.cases")
+    for case_name, case_payload in payload["cases"].items():
+        case_path = f"{path}.cases[{case_name!r}]"
+        expect_type(case_name, str, f"{case_path}.name")
+        if not case_name:
+            fail(f"{case_path}.name: expected non-empty string")
+        expect_type(case_payload, dict, case_path)
+        expect_keys(case_payload, ["live_profiles"], case_path)
+        expect_type(case_payload["live_profiles"], dict, f"{case_path}.live_profiles")
+        if not case_payload["live_profiles"]:
+            fail(f"{case_path}.live_profiles: expected at least one profile override")
+        for profile_name, override in case_payload["live_profiles"].items():
+            override_path = f"{case_path}.live_profiles[{profile_name!r}]"
+            if not isinstance(profile_name, str) or not profile_name:
+                fail(f"{override_path}: profile name must be non-empty")
+            expect_type(override, dict, override_path)
+            expect_keys(override, ["comparison_mode"], override_path)
+            mode = override["comparison_mode"]
+            if mode not in {"exact", "shape", "end_code"}:
+                fail(f"{override_path}.comparison_mode: expected exact, shape, or end_code")
+            if "note" in override and not isinstance(override["note"], str):
+                fail(f"{override_path}.note: expected string")
+            if mode == "exact":
+                expect_keys(override, ["responses"], override_path)
+                validate_string_list(override["responses"], f"{override_path}.responses")
+            elif mode == "shape":
+                if "end_codes" not in override and "lengths" not in override:
+                    fail(f"{override_path}: shape mode requires end_codes, lengths, or both")
+                if "end_codes" in override:
+                    expect_type(override["end_codes"], list, f"{override_path}.end_codes")
+                    for index, value in enumerate(override["end_codes"]):
+                        if not isinstance(value, int) or value < 0:
+                            fail(f"{override_path}.end_codes[{index}]: expected non-negative integer")
+                if "lengths" in override:
+                    expect_type(override["lengths"], list, f"{override_path}.lengths")
+                    for index, value in enumerate(override["lengths"]):
+                        if not isinstance(value, int) or value < 0:
+                            fail(f"{override_path}.lengths[{index}]: expected non-negative integer")
+                if "end_codes" in override and "lengths" in override and len(override["end_codes"]) != len(override["lengths"]):
+                    fail(f"{override_path}: end_codes and lengths must have the same length when both are present")
+            elif mode == "end_code":
+                expect_keys(override, ["end_codes"], override_path)
+                expect_type(override["end_codes"], list, f"{override_path}.end_codes")
+                for index, value in enumerate(override["end_codes"]):
+                    if not isinstance(value, int) or value < 0:
+                        fail(f"{override_path}.end_codes[{index}]: expected non-negative integer")
+
+
 def iter_profile_files():
     for name in sorted(os.listdir(DEVICE_CONSISTENCY_DIR)):
         if name.endswith(".json"):
@@ -146,6 +199,7 @@ def main():
     for profile_path in iter_profile_files():
         validate_device_consistency_profile(profile_path)
     validate_unsupported_paths(UNSUPPORTED_PATHS_FILE)
+    validate_live_profiles(LIVE_PROFILES_FILE)
     print("spec-validation-ok")
 
 

@@ -20,6 +20,16 @@ The tools are layered:
 - `validate_specs.py`
   Fast schema check for checked-in JSON specs before CI or live runs.
 
+## Quick Guide
+
+| Goal | Command |
+| --- | --- |
+| Mock parity across all libraries | `python validate_specs.py && python verify.py` |
+| One library only | `python verify.py --clients python --case-pattern "D Word"` |
+| Real PLC vs saved baseline/profile | `python slmp_live_verify.py --ip ... --port ... --profile r120pcpu_tcp1025 --include-stateful --include-remote` |
+| Real PLC multi-command consistency | `python device_command_consistency.py --host ... --port ... --clients all` |
+| Check JSON specs only | `python validate_specs.py` |
+
 ## Use This Repo For
 
 - **Library unit tests**
@@ -125,6 +135,18 @@ Useful flags:
   Stop after the first failure while still writing reports.
 - `--no-restore-after`
   Skip restore writes when you only want to observe the forward path.
+
+### Guarded paths
+
+These paths are intentionally treated as unsupported and are checked by the
+negative parity cases in `specs/shared/unsupported_path_vectors.json`.
+
+- `LTS/LTC/LSTS/LSTC`
+  Direct bit read is blocked. Use named helpers or the 4-word base block decode.
+- `LTN/LSTN`
+  Direct read is blocked. Use named dword helpers or the 4-word base block decode.
+- `LCS/LCC`
+  `0403 Read Random`, `0406 Read Block`, `1406 Write Block`, and `0801 Entry Monitor Device` are blocked.
 
 ## Repository Layout
 

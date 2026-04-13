@@ -28,6 +28,20 @@ on:
         required: true
         type: boolean
         default: true
+      summary_only:
+        description: Suppress PASS lines and print only failures plus summary
+        required: true
+        type: boolean
+        default: true
+      fail_fast:
+        description: Stop after the first failure
+        required: true
+        type: boolean
+        default: false
+      retries:
+        description: Optional retry count override
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -137,6 +151,15 @@ jobs:
             args+=(--restore-after)
           else
             args+=(--no-restore-after)
+          fi
+          if [[ "${{ inputs.summary_only }}" == "true" ]]; then
+            args+=(--summary-only)
+          fi
+          if [[ "${{ inputs.fail_fast }}" == "true" ]]; then
+            args+=(--fail-fast)
+          fi
+          if [[ -n "${{ inputs.retries }}" ]]; then
+            args+=(--retries "${{ inputs.retries }}")
           fi
           "${args[@]}"
 
