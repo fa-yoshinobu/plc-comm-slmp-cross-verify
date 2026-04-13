@@ -3,6 +3,17 @@
 This repository verifies semantic parity and request-packet parity across the
 Python, .NET, C++, and Node-RED SLMP libraries.
 
+## Consolidation Status
+
+`plc-comm-slmp-cross-verify` is the canonical verification repository.
+
+- `specs/shared/` is the canonical home for the shared JSON vectors that were
+  previously kept in `slmp-shared-spec`.
+- `archive/conformance/` preserves the retired `plc-comm-slmp-conformance`
+  prototype for reference only.
+- Existing unit tests and helper scripts should read the shared vectors from
+  `specs/shared/`.
+
 ## Scope
 
 The current suite in `verify.py` contains 140 tests. It covers:
@@ -28,6 +39,9 @@ The current suite in `verify.py` contains 140 tests. It covers:
 - `clients/`
   Python, .NET, C++, and Node-RED wrapper programs that expose comparable CLI commands.
   The .NET wrapper opens the session through `SlmpConnectionOptions` plus `SlmpClientFactory` before running the shared command set.
+- `specs/shared/`
+  Canonical shared vectors for device encoding, address parsing/normalization,
+  and golden request frames.
 - `verify.py`
   Test orchestrator. Compares status parity and request-packet parity across
   clients. The Node-RED wrapper participates in the commands that are within
@@ -39,6 +53,9 @@ The current suite in `verify.py` contains 140 tests. It covers:
   latest mock-run expectations.
 - `logs/`
   Packet logs, test markers, console logs, and replay history.
+- `archive/conformance/`
+  Retired prototype from the separate `plc-comm-slmp-conformance` workspace.
+  Kept only so earlier stateful mock and spec-driven ideas remain inspectable.
 
 ## Typical Workflow
 
