@@ -59,6 +59,8 @@ def validate_device_consistency_profile(path: str):
         fail(f"{path}.defaults.frame: expected 3e or 4e")
     if defaults["series"] not in {"ql", "iqr"}:
         fail(f"{path}.defaults.series: expected ql or iqr")
+    if "transport" in defaults and defaults["transport"] not in {"tcp", "udp"}:
+        fail(f"{path}.defaults.transport: expected tcp or udp")
     for key in ("retries", "retry_delay_ms", "command_delay_ms", "settle_delay_ms"):
         if not isinstance(defaults[key], int) or defaults[key] < 0:
             fail(f"{path}.defaults.{key}: expected non-negative integer")

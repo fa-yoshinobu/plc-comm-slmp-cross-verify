@@ -12,6 +12,9 @@ location.
 - `high_level_address_parse_vectors.json`: shared parser expectations for Python, .NET, and Node.
 - `cpp_high_level_address_parse_vectors.json`: C++ high-level parser expectations.
 - `frame_golden_vectors.json`: golden request frames for common SLMP operations.
+- `unsupported_path_vectors.json`: negative parity cases for command routes that
+  the libraries intentionally guard, including long timer/counter and `LZ`
+  route restrictions.
 
 Implementation-specific tests should read these files directly where practical.
 Generated artifacts, such as C++ test headers, must be derived from these files

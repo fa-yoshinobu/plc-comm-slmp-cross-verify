@@ -58,7 +58,7 @@ The tools are layered:
 - C++
   `g++ -I ../plc-comm-slmp-cpp-minimal/src clients/cpp/main.cpp ../plc-comm-slmp-cpp-minimal/src/slmp_minimal.cpp ../plc-comm-slmp-cpp-minimal/src/slmp_high_level.cpp -o clients/cpp/cpp_verify_client.exe -lws2_32`
 - Rust
-  `cargo build --manifest-path ../plc-comm-slmp-rust/Cargo.toml --bin slmp_verify_client`
+  `cargo build --manifest-path ../plc-comm-slmp-rust/Cargo.toml --features cli --bin slmp_verify_client`
 
 ### List runnable cases
 
@@ -129,6 +129,8 @@ Useful flags:
 
 - `--devices D10,J1\W10`
   Limit the run to a device subset.
+- `--transport udp`
+  Use UDP instead of the default TCP transport.
 - `--summary-only`
   Suppress per-device PASS lines and print only failures plus the final summary.
 - `--fail-fast`
@@ -144,9 +146,19 @@ negative parity cases in `specs/shared/unsupported_path_vectors.json`.
 - `LTS/LTC/LSTS/LSTC`
   Direct bit read is blocked. Use named helpers or the 4-word base block decode.
 - `LTN/LSTN`
-  Direct read is blocked. Use named dword helpers or the 4-word base block decode.
+  Direct word/dword reads and direct writes are blocked. A 4-word base block
+  read is allowed only for the status/current-value helper decode; normal writes
+  use random/named dword helpers.
+- `LCN`
+  Direct word/dword, random-word, and block paths are blocked. Use random/named
+  dword helpers.
+- `LZ`
+  `LZ` is a double-word index device. Direct word/dword, random-word, and block
+  paths are blocked. Use random/named dword helpers.
 - `LCS/LCC`
-  `0403 Read Random`, `0406 Read Block`, `1406 Write Block`, and `0801 Entry Monitor Device` are blocked.
+  Direct bit read is allowed. Direct bit write, `0403 Read Random`,
+  `0406 Read Block`, `1406 Write Block`, and `0801 Entry Monitor Device` are
+  blocked. Writes use random/named bit helpers.
 
 ## Repository Layout
 

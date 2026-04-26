@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+- Aligned cross-library verification specs with the current long-device route policy: `LCN` and `LZ` now use random/named dword paths, `LCS/LCC` use direct/named reads plus random/named writes, and invalid direct/raw/block routes are covered by shared negative vectors.
+- Updated the live device consistency runner to honor profile `read_paths`, `write_paths`, and `restore_path` for dword devices instead of always exercising direct/raw word routes.
+
 ## [0.1.6] - 2026-04-13
 
 ### Added

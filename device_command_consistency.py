@@ -31,8 +31,6 @@ LONG_STATE_BASE = {
     "LTC": ("LTN", False),
     "LSTS": ("LSTN", True),
     "LSTC": ("LSTN", False),
-    "LCS": ("LCN", True),
-    "LCC": ("LCN", False),
 }
 
 
@@ -40,6 +38,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="192.168.250.100")
     parser.add_argument("--port", type=int, default=1025)
+    parser.add_argument("--transport", choices=["tcp", "udp"])
     parser.add_argument("--profile", default=DEFAULT_PROFILE)
     parser.add_argument("--clients", default="all")
     parser.add_argument("--devices", default="")
@@ -105,7 +104,7 @@ def expand_profile_devices(profile_payload: dict):
                 "volatile": volatile,
                 "notes": item.get("notes", group.get("notes", "")),
             }
-            if spec["kind"] in {"long-state-bit", "long-counter-ro"}:
+            if spec["kind"] == "long-state-bit":
                 spec["base_address"], spec["contact"] = state_base_address(address)
             devices.append(spec)
     return devices
@@ -168,6 +167,7 @@ def runtime_options(profile_payload: dict, args):
     return {
         "frame": defaults.get("frame", "4e"),
         "series": defaults.get("series", "iqr"),
+        "transport": choose("transport", "tcp"),
         "retries": choose("retries", 6),
         "retry_delay_ms": choose("retry_delay_ms", 500),
         "command_delay_ms": choose("command_delay_ms", 100),
@@ -279,6 +279,7 @@ def protocol_flags(kwargs, extra=None):
     flags = {
         "frame": kwargs.get("frame", "4e"),
         "series": kwargs.get("series", "iqr"),
+        "transport": kwargs.get("transport", "tcp"),
     }
     if extra:
         flags.update(extra)
@@ -344,6 +345,17 @@ def write_word_named(client_name: str, address: str, value: int, **kwargs):
     run(client_name, "write-named", f"{address}={value}", [], protocol_flags(kwargs), **kwargs)
 
 
+def write_word_by_path(client_name: str, spec: dict, path: str, value: int, **kwargs):
+    if path == "direct-word":
+        write_word_direct(client_name, spec["address"], value, **kwargs)
+    elif path == "random-word":
+        write_word_random(client_name, spec["address"], value, **kwargs)
+    elif path == "named-word":
+        write_word_named(client_name, spec["address"], value, **kwargs)
+    else:
+        make_error(f"unsupported word write path: {path}")
+
+
 def read_dword_direct(client_name: str, address: str, **kwargs):
     result = run(client_name, "read", address, [1], protocol_flags(kwargs, {"mode": "dword"}), **kwargs)
     return int_value(result["values"][0]) & 0xFFFFFFFF
@@ -368,6 +380,49 @@ def write_dword_random(client_name: str, address: str, value: int, **kwargs):
 
 def write_dword_named(client_name: str, address: str, value: int, **kwargs):
     run(client_name, "write-named", f"{address}={value}", [], protocol_flags(kwargs), **kwargs)
+
+
+def read_dword_by_path(client_name: str, spec: dict, path: str, **kwargs):
+    if path == "direct-dword":
+        return read_dword_direct(client_name, spec["address"], **kwargs)
+    if path == "named-dword":
+        return read_dword_named(client_name, spec["named_address"], **kwargs)
+    if path == "random-dword":
+        return read_dword_random(client_name, spec["address"], **kwargs)
+    if path == "raw-words-low-dword":
+        word_count = spec.get("word_count") or 2
+        return decode_dword(read_word_direct(client_name, spec["address"], word_count, **kwargs)[:2])
+    make_error(f"unsupported dword read path: {path}")
+
+
+def write_dword_by_path(client_name: str, spec: dict, path: str, value: int, **kwargs):
+    if path == "direct-dword":
+        write_dword_direct(client_name, spec["address"], value, **kwargs)
+    elif path == "random-dword":
+        write_dword_random(client_name, spec["address"], value, **kwargs)
+    elif path == "named-dword":
+        write_dword_named(client_name, spec["named_address"], value, **kwargs)
+    else:
+        make_error(f"unsupported dword write path: {path}")
+
+
+def read_bit_by_path(client_name: str, spec: dict, path: str, **kwargs):
+    if path == "direct-bit":
+        return read_bit_direct(client_name, spec["address"], **kwargs)
+    if path == "named":
+        return read_bit_named(client_name, spec["address"], **kwargs)
+    make_error(f"unsupported bit read path: {path}")
+
+
+def write_bit_by_path(client_name: str, spec: dict, path: str, value: bool, **kwargs):
+    if path == "direct-bit":
+        write_bit_direct(client_name, spec["address"], value, **kwargs)
+    elif path == "random-bit":
+        write_bit_random(client_name, spec["address"], value, **kwargs)
+    elif path == "named":
+        write_bit_named(client_name, spec["address"], value, **kwargs)
+    else:
+        make_error(f"unsupported bit write path: {path}")
 
 
 def read_ext_bit(client_name: str, address: str, **kwargs):
@@ -436,6 +491,16 @@ def assert_long_state_reads(client_name: str, spec: dict, expected: bool | None,
     ensure_equal(f"{client_name} {spec['address']}", observed)
 
 
+def assert_long_counter_bit_reads(client_name: str, spec: dict, expected: bool | None, **kwargs):
+    observed = {
+        path: read_bit_by_path(client_name, spec, path, **kwargs)
+        for path in spec.get("read_paths", ["direct-bit", "named"])
+    }
+    if expected is not None:
+        observed["expected"] = expected
+    ensure_equal(f"{client_name} {spec['address']}", observed)
+
+
 def assert_common_word_reads(client_name: str, address: str, expected: int | None, **kwargs):
     observed = {
         "direct": read_word_direct(client_name, address, **kwargs)[0],
@@ -459,10 +524,8 @@ def assert_long_current_reads(client_name: str, spec: dict, expected: int | None
 
 def assert_common_dword_reads(client_name: str, spec: dict, expected: int | None, **kwargs):
     observed = {
-        "direct": read_dword_direct(client_name, spec["address"], **kwargs),
-        "named": read_dword_named(client_name, spec["named_address"], **kwargs),
-        "random": read_dword_random(client_name, spec["address"], **kwargs),
-        "raw_words_low_dword": decode_dword(read_word_direct(client_name, spec["address"], spec["word_count"], **kwargs)[:2]),
+        path: read_dword_by_path(client_name, spec, path, **kwargs)
+        for path in spec.get("read_paths", ["direct-dword", "named-dword", "random-dword"])
     }
     if expected is not None:
         observed["expected"] = expected
@@ -487,8 +550,10 @@ def assert_consistent_reads(spec: dict, client_name: str, expected, **kwargs):
     kind = spec["kind"]
     if kind == "bit":
         assert_common_bit_reads(client_name, spec["address"], expected, **kwargs)
-    elif kind in {"long-state-bit", "long-counter-ro"}:
+    elif kind == "long-state-bit":
         assert_long_state_reads(client_name, spec, expected, **kwargs)
+    elif kind in {"long-counter-bit", "long-counter-ro"}:
+        assert_long_counter_bit_reads(client_name, spec, expected, **kwargs)
     elif kind == "word":
         assert_common_word_reads(client_name, spec["address"], expected, **kwargs)
     elif kind == "long-current":
@@ -507,14 +572,15 @@ def primary_read(spec: dict, client_name: str, **kwargs):
     kind = spec["kind"]
     if kind == "bit":
         return read_bit_direct(client_name, spec["address"], **kwargs)
-    if kind in {"long-state-bit", "long-counter-ro"}:
+    if kind in {"long-state-bit", "long-counter-bit", "long-counter-ro"}:
         return read_bit_named(client_name, spec["address"], **kwargs)
     if kind == "word":
         return read_word_direct(client_name, spec["address"], **kwargs)[0]
     if kind == "long-current":
         return read_dword_named(client_name, spec["named_address"], **kwargs)
     if kind == "dword":
-        return read_dword_direct(client_name, spec["address"], **kwargs)
+        read_path = (spec.get("read_paths") or ["direct-dword"])[0]
+        return read_dword_by_path(client_name, spec, read_path, **kwargs)
     if kind == "ext-bit":
         return read_ext_bit(client_name, spec["address"], **kwargs)
     if kind == "ext-word":
@@ -531,16 +597,13 @@ def restore_original(spec: dict, client_name: str, original, **kwargs):
         return {"attempted": False, "status": "skipped", "policy": policy}
 
     kind = spec["kind"]
-    if kind == "bit":
-        write_bit_direct(client_name, spec["address"], original, **kwargs)
-    elif kind == "long-state-bit":
-        write_bit_named(client_name, spec["address"], original, **kwargs)
+    path = spec["restore_path"]
+    if kind in {"bit", "long-state-bit", "long-counter-bit", "long-counter-ro"}:
+        write_bit_by_path(client_name, spec, path, original, **kwargs)
     elif kind == "word":
-        write_word_direct(client_name, spec["address"], original, **kwargs)
-    elif kind == "long-current":
-        write_dword_named(client_name, spec["named_address"], original, **kwargs)
-    elif kind == "dword":
-        write_dword_direct(client_name, spec["address"], original, **kwargs)
+        write_word_by_path(client_name, spec, path, original, **kwargs)
+    elif kind in {"long-current", "dword"}:
+        write_dword_by_path(client_name, spec, path, original, **kwargs)
     elif kind == "ext-bit":
         write_ext_bit(client_name, spec["address"], original, **kwargs)
     elif kind == "ext-word":
@@ -630,12 +693,34 @@ def compare_long_state_bit(client_name: str, spec: dict, **kwargs):
 
 def compare_long_counter_read_only(client_name: str, spec: dict, **kwargs):
     original = read_bit_named(client_name, spec["address"], **kwargs)
-    assert_long_state_reads(client_name, spec, original, **kwargs)
+    assert_long_counter_bit_reads(client_name, spec, original, **kwargs)
     return {
         "read_before": original,
         "write_sequence": [],
         "restore": restore_original(spec, client_name, original, **kwargs),
     }
+
+
+def compare_long_counter_bit(client_name: str, spec: dict, **kwargs):
+    original = read_bit_named(client_name, spec["address"], **kwargs)
+    write_paths = spec.get("write_paths") or ["named"]
+    sequence = [
+        {"path": path, "value": index % 2 == 0}
+        for index, path in enumerate((write_paths * 2)[:4])
+    ]
+    details = {
+        "read_before": original,
+        "write_sequence": sequence,
+    }
+    try:
+        assert_long_counter_bit_reads(client_name, spec, original, **kwargs)
+        for item in sequence:
+            write_bit_by_path(client_name, spec, item["path"], item["value"], **kwargs)
+            settle(**kwargs)
+            assert_long_counter_bit_reads(client_name, spec, item["value"], **kwargs)
+    finally:
+        details["restore"] = restore_original(spec, client_name, original, **kwargs)
+    return details
 
 
 def compare_common_word(client_name: str, spec: dict, **kwargs):
@@ -692,29 +777,26 @@ def compare_long_current(client_name: str, spec: dict, **kwargs):
 
 
 def compare_common_dword(client_name: str, spec: dict, **kwargs):
-    original = read_dword_direct(client_name, spec["address"], **kwargs)
+    original = primary_read(spec, client_name, **kwargs)
     value_a = seeded_u32(spec["address"], 0x55)
     value_b = seeded_u32(spec["address"], 0x66)
     strict_expected = not spec.get("volatile", False)
+    write_paths = spec.get("write_paths") or ["direct-dword", "random-dword", "named-dword"]
+    values = [value_a, value_b]
+    sequence = [
+        {"path": path, "value": values[index % len(values)]}
+        for index, path in enumerate(write_paths)
+    ]
     details = {
         "read_before": original,
-        "write_sequence": [
-            {"path": "direct-dword", "value": value_a},
-            {"path": "random-dword", "value": value_b},
-            {"path": "named-dword", "value": value_a},
-        ],
+        "write_sequence": sequence,
     }
     try:
         assert_common_dword_reads(client_name, spec, original, **kwargs)
-        write_dword_direct(client_name, spec["address"], value_a, **kwargs)
-        settle(**kwargs)
-        assert_common_dword_reads(client_name, spec, value_a if strict_expected else None, **kwargs)
-        write_dword_random(client_name, spec["address"], value_b, **kwargs)
-        settle(**kwargs)
-        assert_common_dword_reads(client_name, spec, value_b if strict_expected else None, **kwargs)
-        write_dword_named(client_name, spec["named_address"], value_a, **kwargs)
-        settle(**kwargs)
-        assert_common_dword_reads(client_name, spec, value_a if strict_expected else None, **kwargs)
+        for item in sequence:
+            write_dword_by_path(client_name, spec, item["path"], item["value"], **kwargs)
+            settle(**kwargs)
+            assert_common_dword_reads(client_name, spec, item["value"] if strict_expected else None, **kwargs)
     finally:
         details["restore"] = restore_original(spec, client_name, original, **kwargs)
     return details
@@ -768,6 +850,7 @@ COMPARATORS = {
     "bit": compare_common_bit,
     "word": compare_common_word,
     "long-state-bit": compare_long_state_bit,
+    "long-counter-bit": compare_long_counter_bit,
     "long-counter-ro": compare_long_counter_read_only,
     "long-current": compare_long_current,
     "dword": compare_common_dword,

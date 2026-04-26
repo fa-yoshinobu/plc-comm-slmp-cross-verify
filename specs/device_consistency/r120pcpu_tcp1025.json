@@ -4,6 +4,7 @@
   "defaults": {
     "frame": "4e",
     "series": "iqr",
+    "transport": "tcp",
     "retries": 6,
     "retry_delay_ms": 500,
     "command_delay_ms": 100,
@@ -68,13 +69,12 @@
       "restore_policy": "strict"
     },
     {
-      "kind": "long-counter-ro",
+      "kind": "long-counter-bit",
       "addresses": ["LCS10", "LCC10"],
-      "read_only": true,
-      "read_paths": ["named", "base-block4"],
-      "write_paths": [],
-      "restore_path": null,
-      "restore_policy": "skip"
+      "read_paths": ["direct-bit", "named"],
+      "write_paths": ["random-bit", "named"],
+      "restore_path": "named",
+      "restore_policy": "strict"
     },
     {
       "kind": "long-current",
@@ -95,9 +95,9 @@
         {"address": "LZ1", "named_address": "LZ1:D", "word_count": 2}
       ],
       "volatile_addresses": ["LCN10", "LZ0", "LZ1"],
-      "read_paths": ["direct-dword", "named-dword", "random-dword", "raw-words-low-dword"],
-      "write_paths": ["direct-dword", "random-dword", "named-dword"],
-      "restore_path": "direct-dword",
+      "read_paths": ["named-dword", "random-dword"],
+      "write_paths": ["random-dword", "named-dword"],
+      "restore_path": "named-dword",
       "restore_policy": "strict",
       "volatile_restore_policy": "best-effort"
     },

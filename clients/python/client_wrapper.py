@@ -85,6 +85,7 @@ def main():
     parser.add_argument("count_or_values", nargs="*")
     parser.add_argument("--frame", choices=["3e", "4e"], default="3e")
     parser.add_argument("--series", choices=["ql", "iqr"], default="ql")
+    parser.add_argument("--transport", choices=["tcp", "udp"], default="tcp")
     parser.add_argument("--target", help="NW,ST,MIO,MD")
     parser.add_argument("--mode", choices=["word", "bit", "dword", "float"], default="word")
     # Random access
@@ -107,7 +108,17 @@ def main():
     frame = FrameType.FRAME_3E if args.frame == "3e" else FrameType.FRAME_4E
     series = PLCSeries.QL if args.series == "ql" else PLCSeries.IQR
 
-    with SlmpClient(args.host, args.port, frame_type=frame, plc_series=series, default_target=target) as client:
+    device_family = "iq-r" if args.series == "iqr" else "qcpu"
+    with SlmpClient(
+        args.host,
+        args.port,
+        transport=args.transport,
+        frame_type=frame,
+        plc_series=series,
+        device_family=device_family,
+        default_target=target,
+        _allow_manual_profile=True,
+    ) as client:
         result = {}
         try:
             cmd = args.command

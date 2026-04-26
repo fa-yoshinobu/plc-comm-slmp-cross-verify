@@ -13,6 +13,7 @@ function parseArgs(argv) {
     extra: [],
     frame: "3e",
     series: "ql",
+    transport: "tcp",
     mode: "word",
     target: "",
     wordDevs: "",
@@ -32,6 +33,10 @@ function parseArgs(argv) {
     }
     if (token === "--series") {
       args.series = argv[++index];
+      continue;
+    }
+    if (token === "--transport") {
+      args.transport = argv[++index];
       continue;
     }
     if (token === "--mode") {
@@ -87,6 +92,10 @@ function parseTarget(value) {
     moduleIO: Number.parseInt(parts[2], 10),
     multidrop: Number.parseInt(parts[3], 10),
   };
+}
+
+function resolvePlcFamily(args) {
+  return args.series === "iqr" ? "iq-r" : "qcpu";
 }
 
 function parseNamedAddresses(text) {
@@ -309,13 +318,19 @@ function normalizeNamedValueForJson(address, value) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  const plcFamily = resolvePlcFamily(args);
   const client = new slmp.SlmpClient({
     host: args.host,
     port: args.port,
+    transport: args.transport,
     frameType: args.frame,
     plcSeries: args.series,
     target: parseTarget(args.target),
+    _allowManualProfile: true,
   });
+  client.plcFamily = plcFamily;
+  client.deviceFamily = plcFamily;
+  client.deviceRangeFamily = plcFamily;
 
   try {
     await client.connect();

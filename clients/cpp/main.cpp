@@ -121,6 +121,96 @@ private:
     SocketHandle socket_ = kInvalidSocket; bool connected_ = false;
 };
 
+class UdpSocketTransport : public slmp::ITransport {
+public:
+    UdpSocketTransport() : socket_(kInvalidSocket), connected_(false), pending_offset_(0) {}
+    ~UdpSocketTransport() override { close(); }
+    bool connect(const char* host, uint16_t port) override {
+        close();
+#ifdef _WIN32
+        static SocketRuntimeInit r;
+#endif
+        char pt[8]; std::snprintf(pt, sizeof(pt), "%u", port);
+        addrinfo hints = {}, *res = nullptr; hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_DGRAM; hints.ai_protocol = IPPROTO_UDP;
+        if (getaddrinfo(host, pt, &hints, &res) != 0) return false;
+        for (addrinfo* it = res; it != nullptr; it = it->ai_next) {
+            SocketHandle h = socket(it->ai_family, it->ai_socktype, it->ai_protocol);
+            if (h == kInvalidSocket) continue;
+            if (::connect(h, it->ai_addr, static_cast<int>(it->ai_addrlen)) == 0) {
+                socket_ = h; connected_ = true;
+#ifdef _WIN32
+                u_long m = 1; ioctlsocket(socket_, FIONBIO, &m);
+#else
+                fcntl(socket_, F_SETFL, fcntl(socket_, F_GETFL, 0) | O_NONBLOCK);
+#endif
+                freeaddrinfo(res); return true;
+            }
+            closeSocket(h);
+        }
+        freeaddrinfo(res); return false;
+    }
+    void close() override { closeSocket(socket_); socket_ = kInvalidSocket; connected_ = false; pending_.clear(); pending_offset_ = 0; }
+    bool connected() const override { return connected_; }
+    bool writeAll(const uint8_t* data, size_t len) override { return write(data, len) == len; }
+    bool readExact(uint8_t* data, size_t len, uint32_t ms) override {
+        if (!connected_ || data == nullptr) return false;
+        auto dl = std::chrono::steady_clock::now() + std::chrono::milliseconds(ms);
+        size_t off = 0;
+        while (off < len) {
+            size_t n = read(data + off, len - off);
+            if (n > 0) { off += n; continue; }
+            auto now = std::chrono::steady_clock::now();
+            if (now >= dl) return false;
+            if (!waitReadable((uint32_t)std::chrono::duration_cast<std::chrono::milliseconds>(dl - now).count())) return false;
+        }
+        return true;
+    }
+    size_t write(const uint8_t* data, size_t len) override {
+        if (!connected_ || data == nullptr || len == 0) return 0;
+        int sent = ::send(socket_, (const char*)data, (int)len, 0);
+        return sent == (int)len ? len : 0;
+    }
+    size_t read(uint8_t* data, size_t len) override {
+        if (!connected_ || data == nullptr || len == 0) return 0;
+        if (pending_offset_ >= pending_.size()) {
+            pending_.assign(8192, 0);
+            int r = ::recv(socket_, (char*)pending_.data(), (int)pending_.size(), 0);
+            if (r <= 0) { pending_.clear(); pending_offset_ = 0; return 0; }
+            pending_.resize((size_t)r);
+            pending_offset_ = 0;
+        }
+        size_t avail = pending_.size() - pending_offset_;
+        size_t take = len < avail ? len : avail;
+        std::memcpy(data, pending_.data() + pending_offset_, take);
+        pending_offset_ += take;
+        if (pending_offset_ >= pending_.size()) { pending_.clear(); pending_offset_ = 0; }
+        return take;
+    }
+    size_t available() override {
+        if (pending_offset_ < pending_.size()) return pending_.size() - pending_offset_;
+        if (!connected_) return 0;
+#ifdef _WIN32
+        u_long a = 0;
+        ioctlsocket(socket_, FIONREAD, &a);
+        return (size_t)a;
+#else
+        int a = 0;
+        if (ioctl(socket_, FIONREAD, &a) != 0) return 0;
+        return a > 0 ? (size_t)a : 0;
+#endif
+    }
+private:
+    bool waitReadable(uint32_t ms) const {
+        fd_set rs; FD_ZERO(&rs); FD_SET(socket_, &rs);
+        timeval t = {(long)(ms/1000), (long)((ms%1000)*1000)};
+        return select(0, &rs, nullptr, nullptr, &t) > 0;
+    }
+    SocketHandle socket_;
+    bool connected_;
+    std::vector<uint8_t> pending_;
+    size_t pending_offset_;
+};
+
 // --- Helpers ---
 static int parseAutoInt(const std::string& s) {
     if (s.size() > 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X'))
@@ -180,7 +270,11 @@ static bool parseBoolValue(const std::string& s) {
     return s == "1" || s == "true" || s == "TRUE" || s == "True";
 }
 
-static slmp::Error parseNamedUpdates(const std::string& s, slmp::highlevel::Snapshot& out) {
+static slmp::Error parseNamedUpdates(
+    const std::string& s,
+    slmp::highlevel::PlcFamily family,
+    slmp::highlevel::Snapshot& out
+) {
     out.clear();
     for (auto& item : splitStr(s, ',')) {
         auto eq = item.find('=');
@@ -188,7 +282,7 @@ static slmp::Error parseNamedUpdates(const std::string& s, slmp::highlevel::Snap
         std::string address = item.substr(0, eq);
         std::string raw = item.substr(eq + 1);
         slmp::highlevel::AddressSpec spec;
-        const slmp::Error err = slmp::highlevel::parseAddressSpec(address.c_str(), spec);
+        const slmp::Error err = slmp::highlevel::parseAddressSpec(address.c_str(), family, spec);
         if (err != slmp::Error::Ok) return err;
 
         slmp::highlevel::NamedValue nv;
@@ -382,6 +476,8 @@ int main(int argc, char** argv) {
     slmp::FrameType fr = slmp::FrameType::Frame3E;
     slmp::CompatibilityMode sr = slmp::CompatibilityMode::Legacy;
     slmp::TargetAddress tr; bool ts = false; std::string md = "word";
+    std::string seriesMode = "ql";
+    std::string transportMode = "tcp";
     std::string wordDevs, dwordDevs, wordsKv, dwordsKv, bitsKv;
     std::string wordBlocksStr, bitBlocksStr;
     std::vector<std::string> cags;
@@ -389,7 +485,11 @@ int main(int argc, char** argv) {
     for (int i = 5; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--frame") fr = (argv[++i] == std::string("4e")) ? slmp::FrameType::Frame4E : slmp::FrameType::Frame3E;
-        else if (a == "--series") sr = (argv[++i] == std::string("iqr")) ? slmp::CompatibilityMode::iQR : slmp::CompatibilityMode::Legacy;
+        else if (a == "--series") {
+            seriesMode = argv[++i];
+            sr = (seriesMode == "iqr") ? slmp::CompatibilityMode::iQR : slmp::CompatibilityMode::Legacy;
+        }
+        else if (a == "--transport") transportMode = argv[++i];
         else if (a == "--mode") md = argv[++i];
         else if (a == "--target") {
             std::string t = argv[++i]; size_t p1 = t.find(','), p2 = t.find(',',p1+1), p3 = t.find(',',p2+1);
@@ -407,10 +507,15 @@ int main(int argc, char** argv) {
         else cags.push_back(a);
     }
 
-    SocketTransport transport; uint8_t tx[4096], rx[4096];
-    slmp::SlmpClient client(transport, tx, sizeof(tx), rx, sizeof(rx));
+    std::unique_ptr<slmp::ITransport> transport;
+    if (transportMode == "udp") transport = std::make_unique<UdpSocketTransport>();
+    else transport = std::make_unique<SocketTransport>();
+    uint8_t tx[4096], rx[4096];
+    slmp::SlmpClient client(*transport, tx, sizeof(tx), rx, sizeof(rx));
     client.setFrameType(fr); client.setCompatibilityMode(sr); if (ts) client.setTarget(tr);
     if (!client.connect(h, p)) { jsonErr("connect failed"); return 0; }
+    const slmp::highlevel::PlcFamily plcFamily =
+        (seriesMode == "iqr") ? slmp::highlevel::PlcFamily::IqR : slmp::highlevel::PlcFamily::QCpu;
 
     try {
         // --- Basic read/write ---
@@ -424,21 +529,21 @@ int main(int argc, char** argv) {
         else if (cmd == "read-named") {
             slmp::highlevel::Snapshot snapshot;
             const auto addresses = parseNamedAddresses(ads);
-            const slmp::Error err = slmp::highlevel::readNamed(client, addresses, snapshot);
+            const slmp::Error err = slmp::highlevel::readNamed(client, plcFamily, addresses, snapshot);
             if (err == slmp::Error::Ok) printSnapshotResult(snapshot);
             else jsonErr(std::to_string((int)err));
         }
         else if (cmd == "write-named") {
             slmp::highlevel::Snapshot updates;
-            slmp::Error err = parseNamedUpdates(ads, updates);
-            if (err == slmp::Error::Ok) err = slmp::highlevel::writeNamed(client, updates);
+            slmp::Error err = parseNamedUpdates(ads, plcFamily, updates);
+            if (err == slmp::Error::Ok) err = slmp::highlevel::writeNamed(client, plcFamily, updates);
             if (err == slmp::Error::Ok) jsonOk();
             else jsonErr(std::to_string((int)err));
         }
         else if (cmd == "poll-once") {
             slmp::highlevel::Poller poller;
             slmp::highlevel::Snapshot snapshot;
-            slmp::Error err = poller.compile(parseNamedAddresses(ads));
+            slmp::Error err = poller.compile(parseNamedAddresses(ads), plcFamily);
             if (err == slmp::Error::Ok) err = poller.readOnce(client, snapshot);
             if (err == slmp::Error::Ok) printSnapshotResult(snapshot);
             else jsonErr(std::to_string((int)err));

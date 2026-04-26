@@ -47,10 +47,10 @@ def _resolve_rust_client():
         return [exe]
     if os.path.exists(native):
         return [native]
-    return ["cargo", "run", "--quiet", "--manifest-path", manifest, "--bin", "slmp_verify_client", "--"]
+    return ["cargo", "run", "--quiet", "--manifest-path", manifest, "--features", "cli", "--bin", "slmp_verify_client", "--"]
 
 CLIENTS = {
-    "python": ["python", f"{ROOT}/clients/python/client_wrapper.py"],
+    "python": [sys.executable, f"{ROOT}/clients/python/client_wrapper.py"],
     "dotnet": _resolve_dotnet_client(),
     "cpp":    _resolve_cpp_client(),
     "node-red": ["node", f"{ROOT}/clients/node/client_wrapper.js"],
@@ -316,8 +316,8 @@ TESTS = [
     # Index registers
     _t("3E QL Z   Word Write [10]",          "write", "Z0",    [10]),
     _t("3E QL Z   Word Read  1pt",           "read",  "Z0",    [1]),
-    _t("3E iQR LZ  DWord Write [20]",        "write", "LZ0",   [20],          {"series": "iqr", "mode": "dword"}),
-    _t("3E iQR LZ  DWord Read  1pt",         "read",  "LZ0",   [1],           {"series": "iqr", "mode": "dword"}),
+    _t("3E iQR LZ  Random Write DWord",      "random-write-words", "", [],    {"series": "iqr", "dwords": "LZ0=20"}),
+    _t("3E iQR LZ  Random Read  DWord",      "random-read", "", [],           {"series": "iqr", "dword-devs": "LZ0"}),
 
     # ===== 3E QL Bit Read/Write =====
     _t("3E QL M   Bit Write [1,0,1,0]",     "write", "M0",    [1, 0, 1, 0], {"mode": "bit"}),
@@ -360,22 +360,22 @@ TESTS = [
     _t("4E iQR M  Bit Write [1,1,0]",         "write", "M300", [1, 1, 0],    {"frame": "4e", "series": "iqr", "mode": "bit"}),
     _t("4E iQR M  Bit Read  3pts",             "read",  "M300", [3],          {"frame": "4e", "series": "iqr", "mode": "bit"}),
     _t(
-        "3E iQR LTN/LSTN/LCN Random Write DWords",
+        "3E iQR LTN/LSTN/LCN/LZ Random Write DWords",
         "random-write-words",
         "",
         [],
-        {"series": "iqr", "dwords": "LTN10=123456,LSTN20=234567,LCN30=999"},
+        {"series": "iqr", "dwords": "LTN10=123456,LSTN20=234567,LCN30=999,LZ0=1234"},
     ),
     _t(
-        "3E iQR LTN/LSTN/LCN Random Read  DWords",
+        "3E iQR LTN/LSTN/LCN/LZ Random Read  DWords",
         "random-read",
         "",
         [],
-        {"series": "iqr", "dword-devs": "LTN10,LSTN20,LCN30"},
+        {"series": "iqr", "dword-devs": "LTN10,LSTN20,LCN30,LZ0"},
     ),
-    _t("3E iQR LCS Bit  Write [1,0]",         "write", "LCS30", [1, 0],       {"series": "iqr", "mode": "bit"}),
+    _t("3E iQR LCS Random Bit Write [1,0]",  "random-write-bits", "", [],     {"series": "iqr", "bits": "LCS30=1,LCS31=0"}),
     _t("3E iQR LCS Bit  Read  2pts",          "read",  "LCS30", [2],          {"series": "iqr", "mode": "bit"}),
-    _t("3E iQR LCC Bit  Write [0,1]",         "write", "LCC40", [0, 1],       {"series": "iqr", "mode": "bit"}),
+    _t("3E iQR LCC Random Bit Write [0,1]",  "random-write-bits", "", [],     {"series": "iqr", "bits": "LCC40=0,LCC41=1"}),
     _t("3E iQR LCC Bit  Read  2pts",          "read",  "LCC40", [2],          {"series": "iqr", "mode": "bit"}),
 
     # ===== Routing (Other Station) =====
@@ -781,8 +781,14 @@ def run_client(client_name, command, address, extra, flags):
     if client_name == "python":
         extra_args = [str(a) for a in extra] + [item for kv in flags.items() for item in (f"--{kv[0]}", str(kv[1]))]
     cmd = cmd_prefix + [HOST, str(PORT), command, address] + extra_args
+    env = None
+    if client_name == "cpp":
+        env = os.environ.copy()
+        msys_bin = r"C:\msys64\ucrt64\bin"
+        if os.path.isdir(msys_bin):
+            env["PATH"] = msys_bin + os.pathsep + env.get("PATH", "")
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=6)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=6, env=env)
         if result.returncode != 0:
             return {"status": "error", "message": f"Exit {result.returncode}: {result.stderr.strip()[:200]}"}
         stdout = result.stdout.strip()

@@ -17,6 +17,7 @@ namespace SlmpVerifyClient
             string address = args.Length > 3 ? args[3] : "";
             var frame = SlmpFrameType.Frame3E;
             var series = SlmpCompatibilityMode.Legacy;
+            var transport = SlmpTransportMode.Tcp;
             SlmpTargetAddress? target = null;
             string mode = "word";
             string wordDevs = "", dwordDevs = "", wordsKv = "", dwordsKv = "", bitsKv = "";
@@ -27,6 +28,7 @@ namespace SlmpVerifyClient
             {
                 if (args[i] == "--frame") frame = args[++i] == "4e" ? SlmpFrameType.Frame4E : SlmpFrameType.Frame3E;
                 else if (args[i] == "--series") series = args[++i] == "iqr" ? SlmpCompatibilityMode.Iqr : SlmpCompatibilityMode.Legacy;
+                else if (args[i] == "--transport") transport = args[++i] == "udp" ? SlmpTransportMode.Udp : SlmpTransportMode.Tcp;
                 else if (args[i] == "--mode") mode = args[++i];
                 else if (args[i] == "--target")
                 {
@@ -43,12 +45,18 @@ namespace SlmpVerifyClient
                 else cmd_args.Add(args[i]);
             }
 
-            var options = new SlmpConnectionOptions(host) { Port = int.Parse(port), FrameType = frame, CompatibilityMode = series };
-            if (target.HasValue) options = options with { Target = target.Value };
+            var inner = new SlmpClient(host, int.Parse(port), transport)
+            {
+                FrameType = frame,
+                CompatibilityMode = series,
+                PlcFamily = series == SlmpCompatibilityMode.Iqr ? SlmpPlcFamily.IqR : SlmpPlcFamily.QCpu,
+            };
+            if (target.HasValue) inner.TargetAddress = target.Value;
             object? result = null;
             try
             {
-                await using var client = await SlmpClientFactory.OpenAndConnectAsync(options);
+                await using var client = new QueuedSlmpClient(inner);
+                await client.OpenAsync();
 
                 // --- Basic device read/write ---
                 if (command == "read")
