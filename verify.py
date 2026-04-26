@@ -445,6 +445,16 @@ TESTS = [
     _t("3E Read Type Name", "read-type", "", []),
     _t("4E Read Type Name", "read-type", "", [], {"frame": "4e"}),
 
+    # ===== Label Read/Write =====
+    _t("3E Label Random Write LabelW",        "label-random-write", "LabelW",   [0x31, 0x00]),
+    _t("3E Label Random Read  LabelW",        "label-random-read",  "LabelW",   []),
+    _t("3E Label Array Write LabelB byte[2]", "label-array-write",  "LabelB:1:2", [0xAA, 0xBB]),
+    _t("3E Label Array Read  LabelB byte[2]", "label-array-read",   "LabelB:1:2", []),
+    _t("4E Label Random Write LabelW",        "label-random-write", "LabelW",   [0x32, 0x00], {"frame": "4e"}),
+    _t("4E Label Random Read  LabelW",        "label-random-read",  "LabelW",   [], {"frame": "4e"}),
+    _t("4E Label Array Write LabelB byte[2]", "label-array-write",  "LabelB:1:2", [0xCC, 0xDD], {"frame": "4e"}),
+    _t("4E Label Array Read  LabelB byte[2]", "label-array-read",   "LabelB:1:2", [], {"frame": "4e"}),
+
     # ===== High-Level Named Snapshot =====
     _t("3E QL Named Write D910",
        "write-named", "D910=321", []),
@@ -718,6 +728,14 @@ def generate_desc(cmd, addr, extra, flags, clients, expect_error=False):
     elif cmd == "extend-unit-read":
         mod, head = (addr.split(":") + ["0"])[:2]
         return f"Extension unit mod={mod} head={head} -> {extra[0] if extra else 1} words  [{ctx}]"
+    elif cmd == "label-random-write":
+        return f"Label random {addr} <- bytes{list(extra)}  [{ctx}]"
+    elif cmd == "label-random-read":
+        return f"Label random {addr} read  [{ctx}]"
+    elif cmd == "label-array-write":
+        return f"Label array {addr} <- bytes{list(extra)}  [{ctx}]"
+    elif cmd == "label-array-read":
+        return f"Label array {addr} read  [{ctx}]"
     elif cmd == "write-ext":
         kind = "Link Direct" if addr.upper().startswith("J") else "Buffer Memory"
         return f"ExtendedDevice({kind}) {addr} <- {mode_jp}{list(extra)}  [{ctx}]"
@@ -756,6 +774,19 @@ def node_red_supports(command, _address, _extra, _flags):
         "read-named",
         "write-named",
         "poll-once",
+        "remote-run",
+        "remote-stop",
+        "remote-pause",
+        "remote-latch-clear",
+        "remote-reset",
+        "memory-read",
+        "memory-write",
+        "extend-unit-read",
+        "extend-unit-write",
+        "label-random-read",
+        "label-random-write",
+        "label-array-read",
+        "label-array-write",
     }
 
 
@@ -788,7 +819,7 @@ def run_client(client_name, command, address, extra, flags):
         if os.path.isdir(msys_bin):
             env["PATH"] = msys_bin + os.pathsep + env.get("PATH", "")
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=6, env=env)
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=6, env=env)
         if result.returncode != 0:
             return {"status": "error", "message": f"Exit {result.returncode}: {result.stderr.strip()[:200]}"}
         stdout = result.stdout.strip()
@@ -1166,7 +1197,7 @@ def main():
     server_log_path = f"{logs_dir}/server_{ts}.log"
     server_log_fp = open(server_log_path, "w", encoding="utf-8")
     server_proc = subprocess.Popen([
-        "python", "-u", f"{ROOT}/server/mock_server.py",
+        sys.executable, "-u", f"{ROOT}/server/mock_server.py",
         "--port", str(PORT), "--log-json", packets_json
     ], stdout=server_log_fp, stderr=server_log_fp)
     time.sleep(2)

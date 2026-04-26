@@ -212,6 +212,35 @@ namespace SlmpVerifyClient
                     result = new { status = "success" };
                 }
 
+                // --- Label read/write ---
+                else if (command == "label-random-read")
+                {
+                    var labels = ParseLabelNames(address);
+                    var vals = await client.ReadRandomLabelsAsync(labels);
+                    result = new { status = "success", values = vals.Select(item => item.Data.Select(b => (int)b).ToArray()).ToArray() };
+                }
+                else if (command == "label-random-write")
+                {
+                    var data = ParseByteValues(cmd_args);
+                    var points = ParseLabelNames(address).Select(label => new SlmpLabelRandomWritePoint(label, data)).ToArray();
+                    await client.WriteRandomLabelsAsync(points);
+                    result = new { status = "success" };
+                }
+                else if (command == "label-array-read")
+                {
+                    var vals = await client.ReadArrayLabelsAsync(ParseArrayLabelReadPoints(address));
+                    result = new { status = "success", values = vals.Select(item => item.Data.Select(b => (int)b).ToArray()).ToArray() };
+                }
+                else if (command == "label-array-write")
+                {
+                    var data = ParseByteValues(cmd_args);
+                    var points = ParseArrayLabelReadPoints(address)
+                        .Select(point => new SlmpLabelArrayWritePoint(point.Label, point.UnitSpecification, point.ArrayDataLength, data))
+                        .ToArray();
+                    await client.WriteArrayLabelsAsync(points);
+                    result = new { status = "success" };
+                }
+
                 // --- Extended address (Extended Device) ---
                 else if (command == "read-ext")
                 {
@@ -289,6 +318,23 @@ namespace SlmpVerifyClient
             if (string.IsNullOrWhiteSpace(s)) return [];
             return s.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         }
+
+        static string[] ParseLabelNames(string s) => ParseNamedAddresses(s);
+
+        static SlmpLabelArrayReadPoint[] ParseArrayLabelReadPoints(string s)
+        {
+            return ParseLabelNames(s).Select(item =>
+            {
+                var parts = item.Split(':', StringSplitOptions.TrimEntries);
+                return new SlmpLabelArrayReadPoint(
+                    parts[0],
+                    parts.Length > 1 && parts[1].Length > 0 ? (byte)SlmpTargetParser.ParseAutoNumber(parts[1]) : (byte)0,
+                    parts.Length > 2 && parts[2].Length > 0 ? (ushort)SlmpTargetParser.ParseAutoNumber(parts[2]) : (ushort)1);
+            }).ToArray();
+        }
+
+        static byte[] ParseByteValues(IEnumerable<string> values)
+            => values.Select(value => unchecked((byte)SlmpTargetParser.ParseAutoNumber(value))).ToArray();
 
         static Dictionary<string, object> ParseNamedUpdates(string s)
         {

@@ -135,6 +135,29 @@ function parseNamedUpdates(text) {
   return updates;
 }
 
+function parseAutoInt(value) {
+  return Number.parseInt(String(value), 0);
+}
+
+function parseLabelNames(text) {
+  return parseNamedAddresses(text);
+}
+
+function parseArrayLabelPoints(text) {
+  return parseLabelNames(text).map((item) => {
+    const parts = item.split(":").map((part) => part.trim());
+    return {
+      label: parts[0],
+      unitSpecification: parts[1] ? parseAutoInt(parts[1]) : 0,
+      arrayDataLength: parts[2] ? parseAutoInt(parts[2]) : 1,
+    };
+  });
+}
+
+function parseByteValues(values) {
+  return Buffer.from(values.map((value) => parseAutoInt(value) & 0xff));
+}
+
 function parseKvPairs(text) {
   return String(text || "")
     .split(",")
@@ -426,6 +449,53 @@ async function main() {
       };
     } else if (args.command === "write-named") {
       await slmp.writeNamed(client, parseNamedUpdates(args.address));
+      result = { status: "success" };
+    } else if (args.command === "remote-run") {
+      await client.remoteRun();
+      result = { status: "success" };
+    } else if (args.command === "remote-stop") {
+      await client.remoteStop();
+      result = { status: "success" };
+    } else if (args.command === "remote-pause") {
+      await client.remotePause();
+      result = { status: "success" };
+    } else if (args.command === "remote-latch-clear") {
+      await client.remoteLatchClear();
+      result = { status: "success" };
+    } else if (args.command === "remote-reset") {
+      await client.remoteReset({ expectResponse: false });
+      result = { status: "success" };
+    } else if (args.command === "memory-read") {
+      const count = args.extra.length > 0 ? parseAutoInt(args.extra[0]) : 1;
+      result = { status: "success", values: await client.memoryReadWords(parseAutoInt(args.address), count) };
+    } else if (args.command === "memory-write") {
+      await client.memoryWriteWords(parseAutoInt(args.address), args.extra.map(parseAutoInt));
+      result = { status: "success" };
+    } else if (args.command === "extend-unit-read") {
+      const parts = args.address.split(":");
+      const moduleNo = parseAutoInt(parts[0]);
+      const head = parts.length > 1 ? parseAutoInt(parts[1]) : 0;
+      const count = args.extra.length > 0 ? parseAutoInt(args.extra[0]) : 1;
+      result = { status: "success", values: await client.extendUnitReadWords(head, count, moduleNo) };
+    } else if (args.command === "extend-unit-write") {
+      const parts = args.address.split(":");
+      const moduleNo = parseAutoInt(parts[0]);
+      const head = parts.length > 1 ? parseAutoInt(parts[1]) : 0;
+      await client.extendUnitWriteWords(head, moduleNo, args.extra.map(parseAutoInt));
+      result = { status: "success" };
+    } else if (args.command === "label-random-read") {
+      const values = await client.readRandomLabels(parseLabelNames(args.address));
+      result = { status: "success", values: values.map((item) => [...item.data]) };
+    } else if (args.command === "label-random-write") {
+      const data = parseByteValues(args.extra);
+      await client.writeRandomLabels(parseLabelNames(args.address).map((label) => ({ label, data })));
+      result = { status: "success" };
+    } else if (args.command === "label-array-read") {
+      const values = await client.readArrayLabels(parseArrayLabelPoints(args.address));
+      result = { status: "success", values: values.map((item) => [...item.data]) };
+    } else if (args.command === "label-array-write") {
+      const data = parseByteValues(args.extra);
+      await client.writeArrayLabels(parseArrayLabelPoints(args.address).map((point) => ({ ...point, data })));
       result = { status: "success" };
     } else if (args.command === "read-ext") {
       const count = args.extra.length > 0 ? Number.parseInt(args.extra[0], 10) : 1;

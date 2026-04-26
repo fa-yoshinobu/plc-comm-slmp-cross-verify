@@ -314,6 +314,75 @@ static slmp::Error parseNamedUpdates(
     return slmp::Error::Ok;
 }
 
+struct LabelNameStore {
+    std::vector<std::vector<uint16_t>> chars;
+    std::vector<slmp::LabelName> names;
+};
+
+static LabelNameStore makeLabelNameStore(const std::vector<std::string>& labels) {
+    LabelNameStore store;
+    store.chars.reserve(labels.size());
+    store.names.reserve(labels.size());
+    for (const auto& label : labels) {
+        store.chars.push_back({});
+        store.chars.back().reserve(label.size());
+        for (unsigned char c : label) store.chars.back().push_back((uint16_t)c);
+        store.names.push_back({store.chars.back().data(), (uint16_t)store.chars.back().size()});
+    }
+    return store;
+}
+
+static std::vector<std::string> parseLabelNames(const std::string& s) {
+    return parseNamedAddresses(s);
+}
+
+struct ArrayLabelReadStore {
+    LabelNameStore labels;
+    std::vector<slmp::LabelArrayReadPoint> points;
+};
+
+static ArrayLabelReadStore parseArrayLabelReadPoints(const std::string& s) {
+    struct Parsed { std::string label; uint8_t unit; uint16_t length; };
+    std::vector<Parsed> parsed;
+    std::vector<std::string> labels;
+    for (const auto& item : parseLabelNames(s)) {
+        auto parts = splitStr(item, ':');
+        Parsed point{};
+        point.label = parts.empty() ? std::string() : parts[0];
+        point.unit = parts.size() > 1 ? (uint8_t)parseAutoInt(parts[1]) : 0;
+        point.length = parts.size() > 2 ? (uint16_t)parseAutoInt(parts[2]) : 1;
+        labels.push_back(point.label);
+        parsed.push_back(point);
+    }
+
+    ArrayLabelReadStore store;
+    store.labels = makeLabelNameStore(labels);
+    store.points.reserve(parsed.size());
+    for (size_t i = 0; i < parsed.size(); ++i) {
+        store.points.push_back({store.labels.names[i], parsed[i].unit, parsed[i].length});
+    }
+    return store;
+}
+
+static std::vector<uint8_t> parseByteValues(const std::vector<std::string>& values) {
+    std::vector<uint8_t> out;
+    out.reserve(values.size());
+    for (const auto& value : values) out.push_back((uint8_t)parseAutoInt(value));
+    return out;
+}
+
+static void printByteMatrix(const std::vector<std::vector<uint8_t>>& values) {
+    std::cout << "{\"status\":\"success\",\"values\":[";
+    for (size_t i = 0; i < values.size(); ++i) {
+        std::cout << "[";
+        for (size_t j = 0; j < values[i].size(); ++j) {
+            std::cout << (int)values[i][j] << (j + 1 == values[i].size() ? "" : ",");
+        }
+        std::cout << "]" << (i + 1 == values.size() ? "" : ",");
+    }
+    std::cout << "]}" << std::endl;
+}
+
 static void printJsonString(const std::string& s) {
     std::cout << '"';
     for (char c : s) {
@@ -606,6 +675,50 @@ int main(int argc, char** argv) {
             uint32_t head = parts.size() > 1 ? (uint32_t)parseAutoInt(parts[1]) : 0;
             std::vector<uint16_t> v; for (auto& s : cags) v.push_back((uint16_t)std::stoi(s));
             if (client.writeExtendUnitWords(head, moduleNo, v.data(), v.size()) == slmp::Error::Ok) jsonOk();
+            else jsonErr(std::to_string((int)client.lastError()));
+        }
+        else if (cmd == "label-random-read") {
+            auto labelText = parseLabelNames(ads);
+            auto labels = makeLabelNameStore(labelText);
+            std::vector<slmp::LabelRandomReadResult> out(labels.names.size());
+            size_t outCount = 0;
+            if (client.readRandomLabels(labels.names.data(), labels.names.size(), out.data(), out.size(), &outCount) == slmp::Error::Ok) {
+                std::vector<std::vector<uint8_t>> values;
+                values.reserve(outCount);
+                for (size_t i = 0; i < outCount; ++i) values.push_back(std::vector<uint8_t>(out[i].data, out[i].data + out[i].result_length));
+                printByteMatrix(values);
+            } else jsonErr(std::to_string((int)client.lastError()));
+        }
+        else if (cmd == "label-random-write") {
+            auto labelText = parseLabelNames(ads);
+            auto labels = makeLabelNameStore(labelText);
+            auto data = parseByteValues(cags);
+            std::vector<slmp::LabelRandomWritePoint> points;
+            points.reserve(labels.names.size());
+            for (const auto& label : labels.names) points.push_back({label, data.data(), (uint16_t)data.size()});
+            if (client.writeRandomLabels(points.data(), points.size()) == slmp::Error::Ok) jsonOk();
+            else jsonErr(std::to_string((int)client.lastError()));
+        }
+        else if (cmd == "label-array-read") {
+            auto store = parseArrayLabelReadPoints(ads);
+            std::vector<slmp::LabelArrayReadResult> out(store.points.size());
+            size_t outCount = 0;
+            if (client.readArrayLabels(store.points.data(), store.points.size(), out.data(), out.size(), &outCount) == slmp::Error::Ok) {
+                std::vector<std::vector<uint8_t>> values;
+                values.reserve(outCount);
+                for (size_t i = 0; i < outCount; ++i) values.push_back(std::vector<uint8_t>(out[i].data, out[i].data + out[i].data_bytes));
+                printByteMatrix(values);
+            } else jsonErr(std::to_string((int)client.lastError()));
+        }
+        else if (cmd == "label-array-write") {
+            auto readStore = parseArrayLabelReadPoints(ads);
+            auto data = parseByteValues(cags);
+            std::vector<slmp::LabelArrayWritePoint> points;
+            points.reserve(readStore.points.size());
+            for (const auto& point : readStore.points) {
+                points.push_back({point.label, point.unit_specification, point.array_data_length, data.data(), data.size()});
+            }
+            if (client.writeArrayLabels(points.data(), points.size()) == slmp::Error::Ok) jsonOk();
             else jsonErr(std::to_string((int)client.lastError()));
         }
         else if (cmd == "read-ext") {

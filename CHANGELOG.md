@@ -5,6 +5,8 @@
 ### Changed
 - Aligned cross-library verification specs with the current long-device route policy: `LCN` and `LZ` now use random/named dword paths, `LCS/LCC` use direct/named reads plus random/named writes, and invalid direct/raw/block routes are covered by shared negative vectors.
 - Updated the live device consistency runner to honor profile `read_paths`, `write_paths`, and `restore_path` for dword devices instead of always exercising direct/raw word routes.
+- Added parity coverage for label array/random read/write commands across Python, .NET, C++, Node-RED, and Rust.
+- Expanded the Node-RED wrapper scope to remote control, memory, extend-unit, and label commands now supported by its packaged helper layer.
 
 ## [0.1.6] - 2026-04-13
 

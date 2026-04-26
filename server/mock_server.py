@@ -16,6 +16,10 @@ class Command(IntEnum):
     DEVICE_READ_BLOCK = 0x0406
     DEVICE_WRITE_BLOCK = 0x1406
     READ_TYPE_NAME = 0x0101
+    LABEL_ARRAY_READ = 0x041A
+    LABEL_ARRAY_WRITE = 0x141A
+    LABEL_READ_RANDOM = 0x041C
+    LABEL_WRITE_RANDOM = 0x141B
     REMOTE_RUN = 0x1001
     REMOTE_STOP = 0x1002
     REMOTE_PAUSE = 0x1003
@@ -58,6 +62,7 @@ class SlmpMockServer:
         self.context_memory: Dict[tuple, Dict[int, int]] = {}
         self.memory_store: Dict[int, int] = {}
         self.extend_unit_store: Dict[tuple, int] = {}
+        self.label_store: Dict[str, bytes] = {}
         self.logs: List[LogEntry] = []
         self.log_json = log_json
         self._log_fp: Optional[IO] = None
@@ -363,6 +368,34 @@ class SlmpMockServer:
                 self.extend_unit_store[(module_no, head + i)] = int.from_bytes(payload[8+i*2:10+i*2], "little")
             return 0, b""
 
+        elif command == Command.LABEL_READ_RANDOM:
+            labels = self._parse_random_label_read_payload(payload)
+            res = len(labels).to_bytes(2, "little")
+            for label in labels:
+                data = self.label_store.get(label, b"\x00\x00")
+                res += b"\x09\x00" + len(data).to_bytes(2, "little") + data
+            return 0, res
+
+        elif command == Command.LABEL_WRITE_RANDOM:
+            for label, data in self._parse_random_label_write_payload(payload):
+                self.label_store[label] = data
+            return 0, b""
+
+        elif command == Command.LABEL_ARRAY_READ:
+            points = self._parse_array_label_read_payload(payload)
+            res = len(points).to_bytes(2, "little")
+            for label, unit_spec, array_length in points:
+                data_size = self._label_array_data_size(unit_spec, array_length)
+                data = self.label_store.get(label, bytes(data_size))
+                data = data[:data_size].ljust(data_size, b"\x00")
+                res += b"\x09" + unit_spec.to_bytes(1, "little") + array_length.to_bytes(2, "little") + data
+            return 0, res
+
+        elif command == Command.LABEL_ARRAY_WRITE:
+            for label, _unit_spec, _array_length, data in self._parse_array_label_write_payload(payload):
+                self.label_store[label] = data
+            return 0, b""
+
         elif command in (Command.REMOTE_RUN, Command.REMOTE_STOP, Command.REMOTE_PAUSE, Command.REMOTE_LATCH_CLEAR, Command.REMOTE_RESET):
             return 0, b""
 
@@ -370,6 +403,91 @@ class SlmpMockServer:
             return 0, b"MOCK-PLC".ljust(16, b"\x00") + b"\x34\x12"
 
         return 0, b""
+
+    @staticmethod
+    def _label_array_data_size(unit_spec: int, array_length: int) -> int:
+        return array_length * 2 if unit_spec == 0 else array_length
+
+    @staticmethod
+    def _read_label_name(payload: bytes, offset: int) -> tuple[str, int]:
+        if offset + 2 > len(payload):
+            return "", len(payload)
+        char_count = int.from_bytes(payload[offset:offset+2], "little")
+        offset += 2
+        byte_count = char_count * 2
+        raw = payload[offset:offset+byte_count]
+        offset += byte_count
+        return raw.decode("utf-16-le", errors="replace"), offset
+
+    def _skip_abbreviation_labels(self, payload: bytes, offset: int, count: int) -> int:
+        for _ in range(count):
+            _, offset = self._read_label_name(payload, offset)
+        return offset
+
+    def _parse_random_label_read_payload(self, payload: bytes) -> list[str]:
+        if len(payload) < 4:
+            return []
+        count = int.from_bytes(payload[0:2], "little")
+        abbrev_count = int.from_bytes(payload[2:4], "little")
+        offset = self._skip_abbreviation_labels(payload, 4, abbrev_count)
+        labels = []
+        for _ in range(count):
+            label, offset = self._read_label_name(payload, offset)
+            labels.append(label)
+        return labels
+
+    def _parse_random_label_write_payload(self, payload: bytes) -> list[tuple[str, bytes]]:
+        if len(payload) < 4:
+            return []
+        count = int.from_bytes(payload[0:2], "little")
+        abbrev_count = int.from_bytes(payload[2:4], "little")
+        offset = self._skip_abbreviation_labels(payload, 4, abbrev_count)
+        points = []
+        for _ in range(count):
+            label, offset = self._read_label_name(payload, offset)
+            if offset + 2 > len(payload):
+                break
+            data_len = int.from_bytes(payload[offset:offset+2], "little")
+            offset += 2
+            points.append((label, payload[offset:offset+data_len]))
+            offset += data_len
+        return points
+
+    def _parse_array_label_read_payload(self, payload: bytes) -> list[tuple[str, int, int]]:
+        if len(payload) < 4:
+            return []
+        count = int.from_bytes(payload[0:2], "little")
+        abbrev_count = int.from_bytes(payload[2:4], "little")
+        offset = self._skip_abbreviation_labels(payload, 4, abbrev_count)
+        points = []
+        for _ in range(count):
+            label, offset = self._read_label_name(payload, offset)
+            if offset + 4 > len(payload):
+                break
+            unit_spec = payload[offset]
+            array_length = int.from_bytes(payload[offset+2:offset+4], "little")
+            offset += 4
+            points.append((label, unit_spec, array_length))
+        return points
+
+    def _parse_array_label_write_payload(self, payload: bytes) -> list[tuple[str, int, int, bytes]]:
+        if len(payload) < 4:
+            return []
+        count = int.from_bytes(payload[0:2], "little")
+        abbrev_count = int.from_bytes(payload[2:4], "little")
+        offset = self._skip_abbreviation_labels(payload, 4, abbrev_count)
+        points = []
+        for _ in range(count):
+            label, offset = self._read_label_name(payload, offset)
+            if offset + 4 > len(payload):
+                break
+            unit_spec = payload[offset]
+            array_length = int.from_bytes(payload[offset+2:offset+4], "little")
+            offset += 4
+            data_size = self._label_array_data_size(unit_spec, array_length)
+            points.append((label, unit_spec, array_length, payload[offset:offset+data_size]))
+            offset += data_size
+        return points
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

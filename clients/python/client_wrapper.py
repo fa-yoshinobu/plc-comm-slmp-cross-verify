@@ -7,7 +7,14 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.
 
 from slmp.client import SlmpClient
 from slmp.constants import PLCSeries, FrameType
-from slmp.core import SlmpTarget, ExtensionSpec, parse_device
+from slmp.core import (
+    ExtensionSpec,
+    LabelArrayReadPoint,
+    LabelArrayWritePoint,
+    LabelRandomWritePoint,
+    SlmpTarget,
+    parse_device,
+)
 from slmp.constants import DEVICE_CODES, DeviceUnit
 from slmp.utils import read_named_sync, write_named_sync, poll_sync
 
@@ -65,6 +72,28 @@ def _parse_named_updates(items_str):
         result[address] = _parse_named_value(address, value.strip())
     return result
 
+
+def _parse_label_names(items_str):
+    return [item.strip() for item in items_str.split(",") if item.strip()]
+
+
+def _parse_array_label_points(items_str):
+    points = []
+    for item in _parse_label_names(items_str):
+        parts = [part.strip() for part in item.split(":")]
+        points.append(
+            LabelArrayReadPoint(
+                label=parts[0],
+                unit_specification=int(parts[1], 0) if len(parts) > 1 and parts[1] else 0,
+                array_data_length=int(parts[2], 0) if len(parts) > 2 and parts[2] else 1,
+            )
+        )
+    return points
+
+
+def _parse_byte_values(values):
+    return bytes(int(value, 0) & 0xFF for value in values)
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("host")
@@ -79,6 +108,8 @@ def main():
         "self-test",
         "memory-read", "memory-write",
         "extend-unit-read", "extend-unit-write",
+        "label-random-read", "label-random-write",
+        "label-array-read", "label-array-write",
         "read-ext", "write-ext",
     ])
     parser.add_argument("address", nargs="?", default="")
@@ -265,6 +296,37 @@ def main():
                 head = int(parts[1], 0) if len(parts) > 1 else 0
                 vals = [int(v) for v in args.count_or_values]
                 client.extend_unit_write_words(head, module_no, vals)
+                result = {"status": "success"}
+
+            # --- Label read/write ---
+            elif cmd == "label-random-read":
+                values = client.read_random_labels(_parse_label_names(args.address))
+                result = {"status": "success", "values": [list(item.data) for item in values]}
+
+            elif cmd == "label-random-write":
+                data = _parse_byte_values(args.count_or_values)
+                client.write_random_labels([
+                    LabelRandomWritePoint(label=label, data=data)
+                    for label in _parse_label_names(args.address)
+                ])
+                result = {"status": "success"}
+
+            elif cmd == "label-array-read":
+                values = client.read_array_labels(_parse_array_label_points(args.address))
+                result = {"status": "success", "values": [list(item.data) for item in values]}
+
+            elif cmd == "label-array-write":
+                data = _parse_byte_values(args.count_or_values)
+                points = [
+                    LabelArrayWritePoint(
+                        label=point.label,
+                        unit_specification=point.unit_specification,
+                        array_data_length=point.array_data_length,
+                        data=data,
+                    )
+                    for point in _parse_array_label_points(args.address)
+                ]
+                client.write_array_labels(points)
                 result = {"status": "success"}
 
             # --- Extended address (Extended Device) ---
