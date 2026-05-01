@@ -115,7 +115,9 @@ public:
 private:
     bool waitReadable(uint32_t ms) const {
         fd_set rs; FD_ZERO(&rs); FD_SET(socket_, &rs);
-        timeval t = {(long)(ms/1000), (long)((ms%1000)*1000)};
+        timeval t{};
+        t.tv_sec = static_cast<decltype(t.tv_sec)>(ms / 1000);
+        t.tv_usec = static_cast<decltype(t.tv_usec)>((ms % 1000) * 1000);
         return select(0, &rs, nullptr, nullptr, &t) > 0;
     }
     SocketHandle socket_ = kInvalidSocket; bool connected_ = false;
@@ -202,7 +204,9 @@ public:
 private:
     bool waitReadable(uint32_t ms) const {
         fd_set rs; FD_ZERO(&rs); FD_SET(socket_, &rs);
-        timeval t = {(long)(ms/1000), (long)((ms%1000)*1000)};
+        timeval t{};
+        t.tv_sec = static_cast<decltype(t.tv_sec)>(ms / 1000);
+        t.tv_usec = static_cast<decltype(t.tv_usec)>((ms % 1000) * 1000);
         return select(0, &rs, nullptr, nullptr, &t) > 0;
     }
     SocketHandle socket_;
