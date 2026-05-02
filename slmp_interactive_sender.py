@@ -322,12 +322,15 @@ def show_tests(tests):
     print(f"  {'ID':>3}  {'前回':<6} {'Frame':<4} {'Command':<14}  説明")
     print("  " + "─" * 88)
     for i, t in enumerate(tests):
-        pkt = t["packets"][0]
-        frame, cmd_name, pkt_detail = parse_packet_info(pkt)
+        packets = t.get("packets") or []
+        if packets:
+            frame, cmd_name, pkt_detail = parse_packet_info(packets[0])
+        else:
+            frame, cmd_name, pkt_detail = "-", "NoPacket", "送信パケットなし"
         prev = PREV_MARK.get(t["result"], "  ?  ")
         # Prefer test desc (rich), fall back to parsed bytes
-        desc = t["desc"] or pkt_detail or t["name"] or pkt[:24] + "..."
-        n = len(t["packets"])
+        desc = t["desc"] or pkt_detail or t["name"] or ""
+        n = len(packets)
         note = f" ×{n}" if n > 1 else ""
         print(f"  [{i:3}] {prev} {frame:<4} {cmd_name:<14}  {desc}{note}")
     print()
@@ -346,18 +349,23 @@ def batch_send(tests, indices, ip, port, history):
     print(f"{'─'*70}")
     for seq, idx in enumerate(indices, 1):
         t = tests[idx]
-        pkt = t["packets"][0]
-        frame, cmd_name, pkt_detail = parse_packet_info(pkt)
+        packets = t.get("packets") or []
+        if not packets:
+            print(f"\n  [{seq}/{total}] {t.get('name') or f'[{idx}]'}")
+            print("    SKIP: 送信パケットなし")
+            continue
+
+        frame, cmd_name, pkt_detail = parse_packet_info(packets[0])
         name_str = t["name"] or f"[{idx}]"
         desc_str = t["desc"] or pkt_detail or ""
 
         print(f"\n  [{seq}/{total}] {name_str}")
         if desc_str:
             print(f"         {desc_str}")
-        for packet_index, packet in enumerate(t["packets"], 1):
-            print(f"    Send[{packet_index}/{len(t['packets'])}]: {packet}")
+        for packet_index, packet in enumerate(packets, 1):
+            print(f"    Send[{packet_index}/{len(packets)}]: {packet}")
 
-        responses, err = send_case_packets(t["packets"], ip, port)
+        responses, err = send_case_packets(packets, ip, port)
         if err:
             print(f"    Recv: ERROR — {err}")
             errors += 1
@@ -404,8 +412,8 @@ def batch_send(tests, indices, ip, port, history):
 # ---------------------------------------------------------------------------
 def main():
     print("=== SLMP Interactive Raw Sender ===")
-    ip   = input("PLC IP   [127.0.0.1]: ").strip() or "127.0.0.1"
-    port = int(input("PLC Port [9000]     : ").strip() or "9000")
+    ip   = input("PLC IP   [192.168.250.100]: ").strip() or "192.168.250.100"
+    port = int(input("PLC Port [1025]     : ").strip() or "1025")
     history = load_response_history()
 
     while True:
@@ -466,12 +474,16 @@ def main():
             idx = int(choice)
             if 0 <= idx < len(tests):
                 t = tests[idx]
+                packets = t.get("packets") or []
+                if not packets:
+                    print("  送信パケットがありません。")
+                    continue
                 if t.get("name"):
                     print(f"\n  テスト: {t['name']}")
                     print(f"  説明  : {t['desc']}")
-                for packet_index, pkt in enumerate(t["packets"], 1):
-                    print(f"  Send[{packet_index}/{len(t['packets'])}] : {pkt}")
-                responses, err = send_case_packets(t["packets"], ip, port)
+                for packet_index, pkt in enumerate(packets, 1):
+                    print(f"  Send[{packet_index}/{len(packets)}] : {pkt}")
+                responses, err = send_case_packets(packets, ip, port)
                 if err:
                     print(f"  ERROR : {err}")
                 else:

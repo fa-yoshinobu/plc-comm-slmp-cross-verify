@@ -142,8 +142,8 @@ def send_with_retry(ip, port, request_hex, retries, retry_delay_ms):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--ip", required=True)
-    parser.add_argument("--port", type=int, default=9000)
+    parser.add_argument("--ip", default="192.168.250.100")
+    parser.add_argument("--port", type=int, default=1025)
     parser.add_argument("--cases-file", default=LIVE_CASES_FILE)
     parser.add_argument("--mode", choices=["baseline", "all-clients"], default="baseline")
     parser.add_argument("--profile", default="")
